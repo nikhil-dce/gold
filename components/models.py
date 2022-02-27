@@ -110,6 +110,7 @@ class IntentModel(BaseModel):
   def forward(self, inputs, targets, outcome='loss'):
     enc_out = self.encoder(**inputs)
     sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
+    return_pre_classifier = outcome == 'nml'
 
     hidden = sequence[:, 0, :]                      # batch_size, embed_dim
     if outcome == 'odin':
@@ -117,6 +118,8 @@ class IntentModel(BaseModel):
       hidden += noise.to(device)
     else:
       hidden = self.dropout(hidden)
+    
+    pre_classifier = hidden
     logit = self.classify(hidden, outcome)          # batch_size, num_intents    
     
     loss = torch.zeros(1)    # set as default loss
@@ -127,14 +130,17 @@ class IntentModel(BaseModel):
       output = logit     # this output will be ignored during the return
       pseudo_label = torch.argmax(logit)
       loss = self.criterion(logit, pseudo_label.unsqueeze(0))
-    elif outcome in ['dropout', 'maxprob']:
+    elif outcome in ['dropout', 'maxprob', 'nml']:
       output = self.softmax(logit)
     elif outcome in ['odin', 'entropy']:
       output = self.softmax(logit / self.temperature)
     else:                   # used by the 'direct' methods during evaluation
       output = logit
 
-    return output, loss
+    if return_pre_classifier:
+      return output, loss, pre_classifier
+    else:
+      return output, loss
 
 class Classifier(nn.Module):
   def __init__(self, args, target_size):
@@ -150,4 +156,4 @@ class Classifier(nn.Module):
     # hidden now is (batch_size, hidden_dim)
     logit = self.bottom(middle)
     # logit has shape (batch_size, num_slots)
-    return middle if outcome in ['bert_embed', 'mahalanobis', 'gradient'] else logit
+    return middle if outcome in ['bert_embed', 'mahalanobis', 'gradient', 'nml'] else logit

@@ -11,7 +11,7 @@ from assets.static_vars import device, debug_break, direct_modes
 from utils.help import set_seed, setup_gpus, check_directories, prepare_inputs
 from utils.process import get_dataloader, check_cache, prepare_features, process_data
 from utils.load import load_data, load_tokenizer, load_ontology, load_best_model
-from utils.evaluate import make_clusters, process_diff, process_drop, quantify, run_inference
+from utils.evaluate import make_clusters, make_projection_matrices, process_diff, process_drop, quantify, run_inference, make_projection_matrices, process_nml
 from utils.arguments import solicit_params
 from app import augment_features
 
@@ -65,6 +65,11 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
     outputs = process_diff(args, clusters, *outputs)
   elif args.version == 'baseline' and args.method == 'dropout':
     outputs = process_drop(args, *outputs, exp_logger)
+  elif args.version == 'baseline' and args.method == 'nml':
+    preloader = get_dataloader(args, datasets['train'], split='train')
+    p_parallel, p_bot = make_projection_matrices(args, preloader, model, exp_logger, split)
+    outputs = process_nml(args, p_parallel, p_bot, *outputs)
+    
   results = quantify(args, *outputs, split)
   return results
   

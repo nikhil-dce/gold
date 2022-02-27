@@ -1,6 +1,8 @@
+from cgi import test
 import os, pdb, sys
 import re
 import json
+from unittest import TextTestResult
 import torch
 import numpy as np
 import random
@@ -243,6 +245,59 @@ def compute_centroids(vectors, labels):
   centroids = torch.stack(centers)          # (num_intents, hidden_dim)
   return centroids
 
+def make_projection_matrices(args, dataloader, model, exp_logger, split):
+  
+  # Consider creating cache for projection matrices.
+  # cache_results, already_done = projection_matrices_cache(args)
+  # if already_done:
+  #   return cache_results
+
+  _, _, _, train_feats = run_inference(args, model, dataloader, exp_logger, split)
+  train_feats = train_feats.cpu()
+    
+  # Calc x_Bot
+  n, m = train_feats.shape
+  p = train_feats.T @ train_feats
+  p_parallel = np.linalg.pinv(p)
+  p_bot = np.eye(m) - p_parallel @ p
+  # torch.save((p_parallel, p_bot), cache_results)
+
+  print(f'p_parallel of shape {p_parallel.shape}.')
+  print(f'p_bot of shape {p_bot.shape}.')
+
+  return p_parallel, p_bot
+
+def process_nml(args, p_parallel, p_bot, probs, targets, exp_logger, testset):
+  """
+    Calculate the genie probability
+
+    Args:
+      :param probs: The model probability of the dataset: (n,)
+      :param p_parallel: projection matrix, the parrallel component
+      :param p_bot: projection matrix, the orthogonal component
+      :param testset: tte dataset to evaluate: (n,m)
+  """
+
+  test_feats = testset.cpu()
+  n, n_classes = probs.shape
+  # Calc energy of each component
+  x_parallel_square = np.array([x @ p_parallel @ x.T for x in test_feats])
+  x_bot_square = np.array([x @ p_bot @ x.T for x in test_feats])
+
+  #
+  x_t_g = np.maximum(x_bot_square, x_parallel_square / (1 + x_parallel_square))
+  x_t_g = np.expand_dims(x_t_g, -1)
+  x_t_g_repeated = np.repeat(x_t_g, n_classes, axis=1)
+
+  # Genie prediction
+  genie_predictions = probs / (probs + (1 - probs) * (probs ** x_t_g_repeated))
+
+  # Regret
+  nfs = genie_predictions.sum(axis=1)
+  regrets = np.log(nfs) / np.log(n_classes)
+
+  return torch.tensor(regrets), targets, exp_logger
+
 def make_clusters(args, dataloader, model, exp_logger, split):
   ''' create the clusters and store in cache, number of clusters should equal the number
   of intents.  Each cluster is represented by the coordinates of its centroid location '''
@@ -277,6 +332,7 @@ def mahala_dist(x, mu, VI):
   score = torch.matmul(left_term, x_minus_mu.T)
   return torch.sqrt(abs(score))
 
+
 def process_diff(args, clusters, vectors, targets, exp_logger):
   ''' figure out how far from clusters '''
   inv_cov_matrix = make_covariance_matrix(args, vectors, clusters)
@@ -294,6 +350,7 @@ def process_diff(args, clusters, vectors, targets, exp_logger):
     # uncertainty_preds.append(min_distance.item() > args.threshold)
   return torch.tensor(uncertainty_preds), targets, exp_logger
 
+
 def run_inference(args, model, dataloader, exp_logger, split):
   if args.method == 'gradient':
     vectors, scope_targets = gradient_inference(args, model, dataloader)
@@ -302,7 +359,7 @@ def run_inference(args, model, dataloader, exp_logger, split):
     predictions_ensemble, targets_ensemble, ensemble_size = dropout_inference(args, model, dataloader)
     return predictions_ensemble, targets_ensemble, ensemble_size
 
-  predictions, all_targets = [], []
+  predictions, all_targets, all_encoder_out = [], [], []
   all_contexts, texts = [], []
 
   for batch in progress_bar(dataloader, total=len(dataloader)):
@@ -311,7 +368,14 @@ def run_inference(args, model, dataloader, exp_logger, split):
 
     out = args.method if args.version == 'baseline' else 'loss'
     with torch.no_grad():
-      pred, batch_loss = model(inputs, labels, outcome=out)
+      forward_out = model(inputs, labels, outcome=out)
+    
+    if args.method == 'nml':
+      pred, batch_loss, encoder_out = forward_out
+      all_encoder_out.append(encoder_out.detach().cpu())
+    else:
+      pred, batch_loss = forward_out
+      
     predictions.append(pred.detach().cpu())
     all_targets.append(labels.detach().cpu())
     all_contexts.append(inputs['input_ids'].detach().cpu())
@@ -323,7 +387,14 @@ def run_inference(args, model, dataloader, exp_logger, split):
 
   preds = combine_preds(predictions, exp_logger.version)
   targets = torch.cat(all_targets)
-  return preds, targets, exp_logger
+  
+  if args.method == 'nml':
+    # N: dataloader size, dim: encoder output dimension.
+    all_encoder_out = torch.cat(all_encoder_out) # [N, dim]
+    return preds, targets, exp_logger, all_encoder_out
+  else:
+    return preds, targets, exp_logger
+
 
 def combine_preds(predictions, mode):
   # unlike compute_preds, combine_preds is threshold independent
