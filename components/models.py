@@ -13,6 +13,7 @@ from transformers import T5ForConditionalGeneration, BartForConditionalGeneratio
 from assets.static_vars import baseline_methods, direct_modes, device
 # from transformers import GPT2Model
 
+import pdb
 class BaseModel(nn.Module):
   # Main model for predicting Unified Meaning Representations of act, topic and modifier
   def __init__(self, args, ontology, tokenizer):
@@ -122,6 +123,7 @@ class IntentModel(BaseModel):
     pre_classifier = hidden
     logit = self.classify(hidden, outcome)          # batch_size, num_intents    
     
+    #pdb.set_trace()
     loss = torch.zeros(1)    # set as default loss
     if outcome == 'loss':   # used by default for 'intent' and 'direct' training
       output = logit     # logit is a FloatTensor, targets should be a LongTensor

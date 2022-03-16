@@ -14,6 +14,7 @@ from sklearn.metrics import accuracy_score, roc_auc_score, average_precision_sco
 from assets.static_vars import device, debug_break, direct_modes, lorem_ipsum
 from scipy.stats import entropy
 
+import pdb
 from utils.help import *
 
 def qualify(args, preds, targets, contexts, texts, tokenizer):
@@ -258,8 +259,9 @@ def make_projection_matrices(args, dataloader, model, exp_logger, split):
   # Calc x_Bot
   n, m = train_feats.shape
   p = train_feats.T @ train_feats
+  p_numpy = p.cpu().detach().numpy()
   p_parallel = np.linalg.pinv(p)
-  p_bot = np.eye(m) - p_parallel @ p
+  p_bot = np.eye(m) - p_parallel @ p_numpy
   # torch.save((p_parallel, p_bot), cache_results)
 
   print(f'p_parallel of shape {p_parallel.shape}.')
@@ -277,6 +279,9 @@ def process_nml(args, p_parallel, p_bot, probs, targets, exp_logger, testset):
       :param p_bot: projection matrix, the orthogonal component
       :param testset: tte dataset to evaluate: (n,m)
   """
+  
+  #pdb.set_trace()
+  p_bot = p_bot.astype(np.float32)
 
   test_feats = testset.cpu()
   n, n_classes = probs.shape
@@ -288,9 +293,12 @@ def process_nml(args, p_parallel, p_bot, probs, targets, exp_logger, testset):
   x_t_g = np.maximum(x_bot_square, x_parallel_square / (1 + x_parallel_square))
   x_t_g = np.expand_dims(x_t_g, -1)
   x_t_g_repeated = np.repeat(x_t_g, n_classes, axis=1)
-
+  
+  #pdb.set_trace()
+  x_t_g_repeated_torch = torch.from_numpy(x_t_g_repeated)
   # Genie prediction
-  genie_predictions = probs / (probs + (1 - probs) * (probs ** x_t_g_repeated))
+  probs = torch.exp(probs)
+  genie_predictions = probs / (probs + (1 - probs) * (probs ** x_t_g_repeated_torch))
 
   # Regret
   nfs = genie_predictions.sum(axis=1)
@@ -375,7 +383,8 @@ def run_inference(args, model, dataloader, exp_logger, split):
       all_encoder_out.append(encoder_out.detach().cpu())
     else:
       pred, batch_loss = forward_out
-      
+    
+    #pdb.set_trace()  
     predictions.append(pred.detach().cpu())
     all_targets.append(labels.detach().cpu())
     all_contexts.append(inputs['input_ids'].detach().cpu())

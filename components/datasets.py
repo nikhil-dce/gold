@@ -3,11 +3,14 @@ import numpy as np
 import random
 import torch
 from torch.utils.data import Dataset
+import pdb
 
 class BaseInstance(object):
   def __init__(self, embed_data, example):
+    #pdb.set_trace()
     self.embedding = embed_data['input_ids']
-    self.segments = embed_data['token_type_ids']
+    #self.segments = embed_data['token_type_ids']
+    self.segments = embed_data.get('token_type_ids', [0]* len(self.embedding))
     self.input_mask = embed_data['attention_mask']
 
     self.guid = example['guid']
