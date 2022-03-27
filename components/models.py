@@ -14,6 +14,7 @@ from assets.static_vars import baseline_methods, direct_modes, device
 # from transformers import GPT2Model
 
 import pdb
+from numpy import random
 class BaseModel(nn.Module):
   # Main model for predicting Unified Meaning Representations of act, topic and modifier
   def __init__(self, args, ontology, tokenizer):
@@ -112,7 +113,28 @@ class IntentModel(BaseModel):
     enc_out = self.encoder(**inputs)
     sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
     return_pre_classifier = outcome == 'nml'
-
+    
+    ###Mix-up
+    if outcome == 'loss':
+      batch_s = pooled.shape[0]
+      mix_up_indxs = []
+      
+      for i in range(0, batch_s):
+        if i % 3 == 0:
+          mix_up_indxs.append(i)
+      
+      for idx in mix_up_indxs:
+        alpha = 0.2
+        lam = np.random.beta(alpha, alpha)
+        to_be_mixed_idx = random.randint(batch_s)
+        
+        sequence[idx] = lam * sequence[idx] + (1- lam) * sequence[to_be_mixed_idx]
+        pooled[idx] = lam * pooled[idx] + (1- lam) * pooled[to_be_mixed_idx]
+        
+        targets[idx] = lam * targets[idx] + (1-lam) * targets[to_be_mixed_idx]
+        
+    ###Mix-up
+    #pdb.set_trace()
     hidden = sequence[:, 0, :]                      # batch_size, embed_dim
     if outcome == 'odin':
       noise = torch.randn(hidden.shape) * 1e-6      # standard deviaton of epsilon = 1e-6

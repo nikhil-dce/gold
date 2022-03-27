@@ -11,6 +11,7 @@ from components.datasets import BaseInstance, DirectDataset, IntentDataset
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
+import pdb
 def get_dataloader(args, dataset, split='train'):
   sampler = RandomSampler(dataset) if split == 'train' else SequentialSampler(dataset)
   collate = dataset.collate_func
@@ -70,6 +71,7 @@ def prepare_features(args, target_data, tokenizer, cache_path):
       embed_data = tokenizer(conversation, padding='max_length', truncation=True, max_length=args.max_len)
       instance = BaseInstance(embed_data, example)
       feats.append(instance)
+      #pdb.set_trace()
     all_features[split] = feats
     print(f'Number of {split} features:', len(feats))
 

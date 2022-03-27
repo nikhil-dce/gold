@@ -15,6 +15,7 @@ from utils.evaluate import make_clusters, make_projection_matrices, process_diff
 from utils.arguments import solicit_params
 from app import augment_features
 
+import pdb
 def run_train(args, model, datasets, tokenizer, exp_logger):
   train_dataloader = get_dataloader(args, datasets['train'], split='train')
   total_steps = len(train_dataloader) // args.n_epochs
@@ -27,6 +28,7 @@ def run_train(args, model, datasets, tokenizer, exp_logger):
 
     for step, batch in enumerate(train_dataloader):
       inputs, labels = prepare_inputs(batch, model)
+      #pdb.set_trace()
       pred, loss = model(inputs, labels)
       exp_logger.tr_loss += loss.item()
       loss.backward()
