@@ -114,24 +114,24 @@ class IntentModel(BaseModel):
     sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
     return_pre_classifier = outcome == 'nml'
     
-    ###Mix-up
-    if outcome == 'loss':
-      batch_s = pooled.shape[0]
-      mix_up_indxs = []
+    # ###Mix-up
+    # if outcome == 'loss':
+    #   batch_s = pooled.shape[0]
+    #   mix_up_indxs = []
       
-      for i in range(0, batch_s):
-        if i % 3 == 0:
-          mix_up_indxs.append(i)
+    #   for i in range(0, batch_s):
+    #     if i % 3 == 0:
+    #       mix_up_indxs.append(i)
       
-      for idx in mix_up_indxs:
-        alpha = 0.2
-        lam = np.random.beta(alpha, alpha)
-        to_be_mixed_idx = random.randint(batch_s)
+    #   for idx in mix_up_indxs:
+    #     alpha = 0.2
+    #     lam = np.random.beta(alpha, alpha)
+    #     to_be_mixed_idx = random.randint(batch_s)
         
-        sequence[idx] = lam * sequence[idx] + (1- lam) * sequence[to_be_mixed_idx]
-        pooled[idx] = lam * pooled[idx] + (1- lam) * pooled[to_be_mixed_idx]
+    #     sequence[idx] = lam * sequence[idx] + (1- lam) * sequence[to_be_mixed_idx]
+    #     pooled[idx] = lam * pooled[idx] + (1- lam) * pooled[to_be_mixed_idx]
         
-        targets[idx] = lam * targets[idx] + (1-lam) * targets[to_be_mixed_idx]
+    #     targets[idx] = lam * targets[idx] + (1-lam) * targets[to_be_mixed_idx]
         
     ###Mix-up
     #pdb.set_trace()
@@ -153,6 +153,7 @@ class IntentModel(BaseModel):
     if outcome == 'loss':   # used by default for 'intent' and 'direct' training
       output = logit     # logit is a FloatTensor, targets should be a LongTensor
       loss = self.criterion(logit, targets)
+
     elif outcome == 'gradient':   # we need to hallucinate a pseudo_label for the loss
       output = logit     # this output will be ignored during the return
       pseudo_label = torch.argmax(logit)
@@ -187,7 +188,11 @@ class Classifier(nn.Module):
     if outcome in ['bert_embed', 'mahalanobis', 'gradient']:
       return middle
     elif outcome == 'nml':
-      return (middle, logit)
+      norm = torch.linalg.norm(middle, dim=-1, keepdim=True)
+      middle_normalized = middle / norm
+      logit_normalized = self.bottom(middle_normalized)
+      return (middle_normalized, logit_normalized)
+      # return (middle, logit)
     else:
       return logit   
 
