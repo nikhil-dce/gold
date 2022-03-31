@@ -1,5 +1,6 @@
 assets/
 results/
+nlp/
 
 notes.txt
 __pycache__/

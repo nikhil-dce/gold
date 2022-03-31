@@ -68,7 +68,8 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
   elif args.version == 'baseline' and args.method == 'dropout':
     outputs = process_drop(args, *outputs, exp_logger)
   elif args.version == 'baseline' and args.method == 'nml':
-    preloader = get_dataloader(args, datasets['train'], split='train')
+    # preloader = get_dataloader(args, datasets['train'], split='train')
+    preloader = get_dataloader(args, datasets['train'], split='dev')
     p_parallel, p_bot = make_projection_matrices(args, preloader, model, exp_logger, split)
     outputs = process_nml(args, p_parallel, p_bot, *outputs)
     
