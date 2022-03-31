@@ -128,7 +128,7 @@ class IntentModel(BaseModel):
       alpha = 0.2
       lam = np.random.beta(alpha, alpha)
       for i in range(0, batch_s):
-        if i % 3 == 0:
+        if i % 5 == 0:
           mix_up_indxs.append(i)
       
       for idx in mix_up_indxs:
