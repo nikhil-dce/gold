@@ -70,5 +70,9 @@ def solicit_params():
     parser.add_argument("--max-len", default=256, type=int,
                 help="maximum sequence length to look back")
 
+    # Mix-up
+    parser.add_argument("--mixup", default=0, type=int,
+                help="Enable mix-up or not")
+                
     args = parser.parse_args()
     return args
