@@ -151,10 +151,10 @@ class IntentModel(BaseModel):
       hidden = self.dropout(hidden)
     
     pre_classifier = hidden
-    #if outcome == 'nml':
-    #  _ , logit = self.classify(hidden, outcome)
-    #else:
-    logit = self.classify(hidden, outcome) # batch_size, num_intents
+    if outcome == 'nml':
+      pre_classifier, logit = self.classify(hidden, outcome)
+    else:
+      logit = self.classify(hidden, outcome) # batch_size, num_intents
     
     #pdb.set_trace()
     loss = torch.zeros(1)    # set as default loss\
@@ -199,7 +199,7 @@ class Classifier(nn.Module):
     logit = self.bottom(middle)
     # logit has shape (batch_size, num_slots)
 
-    if outcome in ['bert_embed', 'mahalanobis', 'gradient', 'nml']:
+    if outcome in ['bert_embed', 'mahalanobis', 'gradient']:
       return middle
     elif outcome == 'nml':
       norm = torch.linalg.norm(middle, dim=-1, keepdim=True)
