@@ -102,12 +102,17 @@ class IntentModel(BaseModel):
       for category in allowed:
         target_size += len(ontology[category])
     
+    #mix-up
+    mixup = 0
+    if args.mixup == 1:
+      mixup = 1
     self.temperature = args.temperature
     self.dropout = nn.Dropout(args.drop_rate)
     self.classify = Classifier(args, target_size)
     self.softmax = nn.LogSoftmax(dim=1)
     self.criterion = nn.CrossEntropyLoss()  # combines LogSoftmax() and NLLLoss()
     self.name = 'nlu'
+    self.mixedup = mixup
 
   def forward(self, inputs, targets, outcome='loss'):
     enc_out = self.encoder(**inputs)
@@ -115,23 +120,26 @@ class IntentModel(BaseModel):
     return_pre_classifier = outcome == 'nml'
     
     # ###Mix-up
-    # if outcome == 'loss':
-    #   batch_s = pooled.shape[0]
-    #   mix_up_indxs = []
+    if outcome == 'loss' and self.mixedup == 1:
+      batch_s = pooled.shape[0]
+      mix_up_indxs = []
       
-    #   for i in range(0, batch_s):
-    #     if i % 3 == 0:
-    #       mix_up_indxs.append(i)
+      targets_mod = targets.clone()
+      alpha = 0.2
+      lam = np.random.beta(alpha, alpha)
+      for i in range(0, batch_s):
+        if i % 3 == 0:
+          mix_up_indxs.append(i)
       
-    #   for idx in mix_up_indxs:
-    #     alpha = 0.2
-    #     lam = np.random.beta(alpha, alpha)
-    #     to_be_mixed_idx = random.randint(batch_s)
+      for idx in mix_up_indxs:
+        to_be_mixed_idx = random.randint(batch_s)
+      
+        sequence[idx] = lam * sequence[idx] + (1- lam) * sequence[to_be_mixed_idx]
+        pooled[idx] = lam * pooled[idx] + (1- lam) * pooled[to_be_mixed_idx]
         
-    #     sequence[idx] = lam * sequence[idx] + (1- lam) * sequence[to_be_mixed_idx]
-    #     pooled[idx] = lam * pooled[idx] + (1- lam) * pooled[to_be_mixed_idx]
         
-    #     targets[idx] = lam * targets[idx] + (1-lam) * targets[to_be_mixed_idx]
+        targets_mod[idx] = to_be_mixed_idx
+        #lam * targets[idx] + (1-lam) * targets[to_be_mixed_idx]
         
     ###Mix-up
     #pdb.set_trace()
@@ -149,10 +157,16 @@ class IntentModel(BaseModel):
     logit = self.classify(hidden, outcome) # batch_size, num_intents
     
     #pdb.set_trace()
-    loss = torch.zeros(1)    # set as default loss
+    loss = torch.zeros(1)    # set as default loss\
+    loss2 = torch.zeros(1)   # default mixup loss
     if outcome == 'loss':   # used by default for 'intent' and 'direct' training
       output = logit     # logit is a FloatTensor, targets should be a LongTensor
       loss = self.criterion(logit, targets)
+      
+      if self.mixedup == 1:
+        loss2 = self.criterion(logit, targets_mod)
+        loss = lam * loss + (1 - lam) * loss2
+        #pdb.set_trace()
 
     elif outcome == 'gradient':   # we need to hallucinate a pseudo_label for the loss
       output = logit     # this output will be ignored during the return
