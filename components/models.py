@@ -149,9 +149,9 @@ class IntentModel(BaseModel):
     hidden = sequence[:, 0, :] # batch_size, embed_dim
 
     ###Mix-up
+    batch_s = hidden.shape[0]
     if outcome == 'loss' and self.mixedup == 1:
       alpha = 0.2
-      batch_s = hidden.shape[0]
       index = torch.randperm(batch_s).to(device)
       lambda_v = torch.from_numpy(np.random.beta(
         alpha, alpha, size=(batch_s, 1))).float()
