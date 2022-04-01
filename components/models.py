@@ -119,36 +119,47 @@ class IntentModel(BaseModel):
     sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
     return_pre_classifier = outcome == 'nml'
     
-    # ###Mix-up
-    if outcome == 'loss' and self.mixedup == 1:
-      batch_s = pooled.shape[0]
-      mix_up_indxs = []
+    # # ###Mix-up
+    # if outcome == 'loss' and self.mixedup == 1:
+    #   batch_s = pooled.shape[0]
+    #   mix_up_indxs = []
       
-      targets_mod = targets.clone()
-      #alpha = 0.2
-      #lam = np.random.beta(alpha, alpha)
-      for i in range(0, batch_s):
-        if i % 5 == 0:
-          mix_up_indxs.append(i)
+    #   targets_mod = targets.clone()
+    #   #alpha = 0.2
+    #   #lam = np.random.beta(alpha, alpha)
+    #   for i in range(0, batch_s):
+    #     if i % 5 == 0:
+    #       mix_up_indxs.append(i)
       
-      lambda_v = torch.ones(batch_s).cuda()
+    #   lambda_v = torch.ones(batch_s).cuda()
 
-      for idx in mix_up_indxs:
-        alpha = 0.2
-        lam = np.random.beta(alpha, alpha)
-        lambda_v[idx] = lam
-        to_be_mixed_idx = random.randint(batch_s)
-        #pdb.set_trace()
-        sequence[idx] = lam * sequence[idx] + (1- lam) * sequence[to_be_mixed_idx]
-        pooled[idx] = lam * pooled[idx] + (1- lam) * pooled[to_be_mixed_idx]
+    #   for idx in mix_up_indxs:
+    #     alpha = 0.2
+    #     lam = np.random.beta(alpha, alpha)
+    #     lambda_v[idx] = lam
+    #     to_be_mixed_idx = random.randint(batch_s)
+    #     #pdb.set_trace()
+    #     sequence[idx] = lam * sequence[idx] + (1- lam) * sequence[to_be_mixed_idx]
+    #     pooled[idx] = lam * pooled[idx] + (1- lam) * pooled[to_be_mixed_idx]
         
-        
-        targets_mod[idx] = to_be_mixed_idx
-        #targets[idx] = lam * targets[idx] + (1-lam) * targets[to_be_mixed_idx]
-        
-    ###Mix-up
+    #     targets_mod[idx] = to_be_mixed_idx
+    #     #targets[idx] = lam * targets[idx] + (1-lam) * targets[to_be_mixed_idx]
+    
     #pdb.set_trace()
-    hidden = sequence[:, 0, :]                      # batch_size, embed_dim
+    hidden = sequence[:, 0, :] # batch_size, embed_dim
+
+    ###Mix-up
+    if outcome == 'loss' and self.mixedup == 1:
+      alpha = 0.2
+      batch_s = hidden.shape[0]
+      index = torch.randperm(batch_s).to(device)
+      lambda_v = torch.from_numpy(np.random.beta(
+        alpha, alpha, size=(batch_s, 1))).float()
+      lambda_v = lambda_v.to(device)
+
+      hidden = lambda_v*hidden + (1.0 - lambda_v) * hidden[index]
+      targets_mod = targets[index]   
+
     if outcome == 'odin':
       noise = torch.randn(hidden.shape) * 1e-6      # standard deviaton of epsilon = 1e-6
       hidden += noise.to(device)
@@ -165,14 +176,17 @@ class IntentModel(BaseModel):
     loss = torch.zeros(batch_s)    # set as default loss\
     loss2 = torch.zeros(batch_s)   # default mixup loss
     if outcome == 'loss':   # used by default for 'intent' and 'direct' training
-      output = logit     # logit is a FloatTensor, targets should be a LongTensor
-      loss = self.criterion(logit, targets)
       
+      output = logit  # logit is a FloatTensor, targets should be a LongTensor
+      loss = self.criterion(logit, targets) # [batch_size]
+
       if self.mixedup == 1:
-        loss2 = self.criterion(logit, targets_mod)
+        loss2 = self.criterion(logit, targets_mod)  # [batch_size]
         #pdb.set_trace()
+
+        # Convert lambda_v shape from [batch_size, 1] to [batch_size].
+        lambda_v =lambda_v.squeeze() 
         loss = lambda_v * loss + (1 - lambda_v) * loss2
-        
 
     elif outcome == 'gradient':   # we need to hallucinate a pseudo_label for the loss
       output = logit     # this output will be ignored during the return
