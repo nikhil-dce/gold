@@ -131,7 +131,7 @@ class IntentModel(BaseModel):
         if i % 5 == 0:
           mix_up_indxs.append(i)
       
-      lambda_v = torch.ones(16).cuda()
+      lambda_v = torch.ones(batch_s).cuda()
 
       for idx in mix_up_indxs:
         alpha = 0.2
@@ -162,8 +162,8 @@ class IntentModel(BaseModel):
       logit = self.classify(hidden, outcome) # batch_size, num_intents
     
     #pdb.set_trace()
-    loss = torch.zeros(16)    # set as default loss\
-    loss2 = torch.zeros(16)   # default mixup loss
+    loss = torch.zeros(batch_s)    # set as default loss\
+    loss2 = torch.zeros(batch_s)   # default mixup loss
     if outcome == 'loss':   # used by default for 'intent' and 'direct' training
       output = logit     # logit is a FloatTensor, targets should be a LongTensor
       loss = self.criterion(logit, targets)
