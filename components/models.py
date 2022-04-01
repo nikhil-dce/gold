@@ -110,7 +110,7 @@ class IntentModel(BaseModel):
     self.dropout = nn.Dropout(args.drop_rate)
     self.classify = Classifier(args, target_size)
     self.softmax = nn.LogSoftmax(dim=1)
-    self.criterion = nn.CrossEntropyLoss()  # combines LogSoftmax() and NLLLoss()
+    self.criterion = nn.CrossEntropyLoss(reduction = 'none')  # combines LogSoftmax() and NLLLoss()
     self.name = 'nlu'
     self.mixedup = mixup
 
@@ -125,21 +125,26 @@ class IntentModel(BaseModel):
       mix_up_indxs = []
       
       targets_mod = targets.clone()
-      alpha = 0.2
-      lam = np.random.beta(alpha, alpha)
+      #alpha = 0.2
+      #lam = np.random.beta(alpha, alpha)
       for i in range(0, batch_s):
         if i % 5 == 0:
           mix_up_indxs.append(i)
       
+      lambda_v = torch.ones(16).cuda()
+
       for idx in mix_up_indxs:
+        alpha = 0.2
+        lam = np.random.beta(alpha, alpha)
+        lambda_v[idx] = lam
         to_be_mixed_idx = random.randint(batch_s)
-      
+        #pdb.set_trace()
         sequence[idx] = lam * sequence[idx] + (1- lam) * sequence[to_be_mixed_idx]
         pooled[idx] = lam * pooled[idx] + (1- lam) * pooled[to_be_mixed_idx]
         
         
         targets_mod[idx] = to_be_mixed_idx
-        #lam * targets[idx] + (1-lam) * targets[to_be_mixed_idx]
+        #targets[idx] = lam * targets[idx] + (1-lam) * targets[to_be_mixed_idx]
         
     ###Mix-up
     #pdb.set_trace()
@@ -157,16 +162,17 @@ class IntentModel(BaseModel):
       logit = self.classify(hidden, outcome) # batch_size, num_intents
     
     #pdb.set_trace()
-    loss = torch.zeros(1)    # set as default loss\
-    loss2 = torch.zeros(1)   # default mixup loss
+    loss = torch.zeros(16)    # set as default loss\
+    loss2 = torch.zeros(16)   # default mixup loss
     if outcome == 'loss':   # used by default for 'intent' and 'direct' training
       output = logit     # logit is a FloatTensor, targets should be a LongTensor
       loss = self.criterion(logit, targets)
       
       if self.mixedup == 1:
         loss2 = self.criterion(logit, targets_mod)
-        loss = lam * loss + (1 - lam) * loss2
         #pdb.set_trace()
+        loss = lambda_v * loss + (1 - lambda_v) * loss2
+        
 
     elif outcome == 'gradient':   # we need to hallucinate a pseudo_label for the loss
       output = logit     # this output will be ignored during the return
@@ -178,7 +184,8 @@ class IntentModel(BaseModel):
       output = self.softmax(logit / self.temperature)
     else:                   # used by the 'direct' methods during evaluation
       output = logit
-
+    
+    loss = torch.mean(loss)
     if return_pre_classifier:
       return output, loss, pre_classifier
     else:
