@@ -259,7 +259,7 @@ def compute_centroids_soft_labels(vectors, probs):
   #   clusters[key].append(vector)
 
   mc = torch.unsqueeze(torch.sum(probs, dim=0), dim=1) # [num_classes, 1]
-  centroids = torch.matmul(probs, vectors.T) / mc # [num_intents, hidden_dim]
+  centroids = torch.matmul(probs.T, vectors) / mc # [num_intents, hidden_dim]
   centroids = centroids.detach()
   # centers = []
   # for intent, nodes in clusters.items():
@@ -417,7 +417,7 @@ def run_inference(args, model, dataloader, exp_logger, split):
     with torch.no_grad():
       forward_out = model(inputs, labels, outcome=out)
     
-    if args.method == 'nml':
+    if (args.method == 'nml') or (args.method == 'mahalanobis_preds'):
       pred, batch_loss, pre_classifier = forward_out
       all_encoder_out.append(pre_classifier.detach().cpu())
     

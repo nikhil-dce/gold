@@ -11,7 +11,7 @@ from assets.static_vars import device, debug_break, direct_modes
 from utils.help import set_seed, setup_gpus, check_directories, prepare_inputs
 from utils.process import get_dataloader, check_cache, prepare_features, process_data
 from utils.load import load_data, load_tokenizer, load_ontology, load_best_model
-from utils.evaluate import make_clusters, make_projection_matrices, process_diff, process_drop, quantify, run_inference, make_projection_matrices, process_nml
+from utils.evaluate import make_clusters, make_projection_matrices, process_diff, process_drop, quantify, run_inference, make_projection_matrices, process_nml, make_clusters_pred
 from utils.arguments import solicit_params
 from app import augment_features
 
