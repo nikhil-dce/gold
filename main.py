@@ -11,7 +11,7 @@ from assets.static_vars import device, debug_break, direct_modes
 from utils.help import set_seed, setup_gpus, check_directories, prepare_inputs
 from utils.process import get_dataloader, check_cache, prepare_features, process_data
 from utils.load import load_data, load_tokenizer, load_ontology, load_best_model
-from utils.evaluate import make_clusters, make_projection_matrices, process_diff, process_drop, quantify, run_inference, make_projection_matrices, process_nml, make_clusters_pred
+from utils.evaluate import make_clusters, make_projection_matrices, process_diff, process_drop, quantify, run_inference, make_projection_matrices, process_nml, make_clusters_pred, make_covariance_matrix, make_covariance_matrix_preds
 from utils.arguments import solicit_params
 from app import augment_features
 
@@ -63,16 +63,16 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
   outputs = run_inference(args, model, dataloader, exp_logger, split)
   if args.version == 'baseline' and args.method in ['bert_embed', 'mahalanobis', 'gradient']:
     preloader = get_dataloader(args, datasets['train'], split='train')
-    clusters = make_clusters(args, preloader, model, exp_logger, split)
-    outputs = process_diff(args, clusters, *outputs)
-  if args.version == 'baseline' and args.method in ['mahalanobis_preds']:
+    clusters, inv_cov_matrix = make_clusters(args, preloader, model, exp_logger, split)
+    outputs = process_diff(args, clusters, inv_cov_matrix, *outputs)
+  # if args.version == 'baseline' and args.method in ['mahalanobis_preds']:
+  #   preloader = get_dataloader(args, datasets['train'], split='dev')
+  #   clusters, train_probs = make_clusters_pred(args, preloader, model, exp_logger, split)
     
-    preloader = get_dataloader(args, datasets['train'], split='dev')
-    clusters = make_clusters_pred(args, preloader, model, exp_logger, split)
-
-    preds, targets, exp_logger, all_encoder_out = outputs
-    new_outputs = all_encoder_out, targets, exp_logger
-    outputs = process_diff(args, clusters, *new_outputs)
+  #   test_logits, test_targets, exp_logger, test_all_encoder_out = outputs
+  #   new_outputs = all_encoder_out, targets, exp_logger
+  #   inv_cov_matrix = make_covariance_matrix_preds(args, all_encoder_out, clusters)
+  #   outputs = process_diff(args, clusters, inv_cov_matrix, *new_outputs)
 
   elif args.version == 'baseline' and args.method == 'dropout':
     outputs = process_drop(args, *outputs, exp_logger)

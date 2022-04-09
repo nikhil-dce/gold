@@ -333,15 +333,19 @@ def process_nml(args, p_parallel, p_bot, probs, targets, exp_logger, testset):
 def make_clusters(args, dataloader, model, exp_logger, split):
   ''' create the clusters and store in cache, number of clusters should equal the number
   of intents.  Each cluster is represented by the coordinates of its centroid location '''
-  cache_results, already_done = centroid_cache(args)
-  if already_done:
-    return cache_results
+  # cache_results, already_done = centroid_cache(args)
+  # already_done = False
+  # if already_done:
+  #   return cache_results
 
   vectors, labels, _ = run_inference(args, model, dataloader, exp_logger, split)
   centroids = compute_centroids(vectors, labels)
-  torch.save(centroids, cache_results)
-  print(f'Saved centroids of shape {centroids.shape} to {cache_results}')
-  return centroids
+  inv_cov_matrix = make_covariance_matrix(args, vectors, centroids)
+
+  # torch.save(centroids, cache_results)
+  print(f'Centroids shape {centroids.shape}')
+  # print(f'Saved centroids of shape {centroids.shape} to {cache_results}')
+  return centroids, inv_cov_matrix
 
 def make_clusters_pred(args, dataloader, model, exp_logger, split):
   ''' create the clusters and store in cache, number of clusters should equal the number
@@ -353,12 +357,28 @@ def make_clusters_pred(args, dataloader, model, exp_logger, split):
   logits, labels, _, vectors = run_inference(args, model, dataloader, exp_logger, split)
   probs = torch.softmax(logits, dim=-1)
   centroids = compute_centroids_soft_labels(vectors, probs)
+  inv_cov_matrix = make_covariance_matrix(args, vectors, centroids)
 
   # torch.save(centroids, cache_results)
+  print(f'Centroids shape {centroids.shape}')
   # print(f'Saved centroids of shape {centroids.shape} to {cache_results}')
-  return centroids
+  return centroids, inv_cov_matrix
 
 def make_covariance_matrix(args, vectors, clusters):
+  if args.verbose:
+    print("Creating covariance matrix")
+
+  num_intents, hidden_dim = clusters.shape
+  covar = torch.zeros(hidden_dim, hidden_dim)
+  for cluster in progress_bar(clusters, total=num_intents):
+    for vector in vectors:
+      diff = (vector - cluster).unsqueeze(1)  # hidden_dim, 1
+      covar += torch.matmul(diff, diff.T)           # hidden_dim, hidden_dim
+  covar /= len(vectors)                       # divide by a scalar throughout
+  inv_cov_matrix = np.linalg.inv(covar)
+  return torch.tensor(inv_cov_matrix)
+
+def make_covariance_matrix_preds(args, vectors, clusters):
   if args.verbose:
     print("Creating covariance matrix")
 
@@ -380,9 +400,9 @@ def mahala_dist(x, mu, VI):
   return torch.sqrt(abs(score))
 
 
-def process_diff(args, clusters, vectors, targets, exp_logger):
+def process_diff(args, clusters, inv_cov_matrix, vectors, targets, exp_logger):
   ''' figure out how far from clusters '''
-  inv_cov_matrix = make_covariance_matrix(args, vectors, clusters)
+  # inv_cov_matrix = make_covariance_matrix(args, vectors, clusters)
   uncertainty_preds = []
   
   for vector in progress_bar(vectors, total=len(vectors)):
@@ -420,7 +440,6 @@ def run_inference(args, model, dataloader, exp_logger, split):
     if (args.method == 'nml') or (args.method == 'mahalanobis_preds'):
       pred, batch_loss, pre_classifier = forward_out
       all_encoder_out.append(pre_classifier.detach().cpu())
-    
     else:
       pred, batch_loss = forward_out
     
