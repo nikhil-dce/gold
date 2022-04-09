@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 import pdb
 def get_dataloader(args, dataset, split='train'):
+  tr_10k = torch.utils.data.Subset(dataset, range(500))
   sampler = RandomSampler(dataset) if split == 'train' else SequentialSampler(dataset)
   collate = dataset.collate_func
   # batch size is 1 to avoid gradient of multiple examples from mixing together
