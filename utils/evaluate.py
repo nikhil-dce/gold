@@ -391,7 +391,7 @@ def make_covariance_matrix(args, vectors, clusters, labels):
   covar = torch.zeros(hidden_dim, hidden_dim)
 
   ##
-  for cluster_ix, vector_list in clusters.items():
+  for cluster_ix, vector_list in clusters_dict.items():
     cluster = torch.unsqueeze(clusters_dict[cluster_ix], dim=0) # [1, hidden_dim]
     # vector_list [Nc, hidden_dim]
     diff = (vector_list - cluster) # [Nc, hidden_dim]
