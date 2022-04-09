@@ -1,4 +1,4 @@
-python main.py --task star --version baseline --learning-rate 1e-5 --model bert --n-epochs 25 --do-train --do-save --mixup 1
+# python main.py --task star --version baseline --learning-rate 1e-5 --model bert --n-epochs 25 --do-train --do-save --mixup 1
 # python main.py --task flow --version baseline --learning-rate 3e-5 --model bert --n-epochs 25 --do-train --do-save --mixup 1
 # python main.py --task rostd --version baseline --learning-rate 1e-5 --model bert --n-epochs 25 --do-train --do-save --mixup 1
 
@@ -34,3 +34,5 @@ python main.py --task star --version baseline --learning-rate 1e-5 --model bert 
 # python main.py --task star --version baseline --do-eval --method nml
 # python main.py --task flow --version baseline --do-eval --method nml
 # python main.py --task rostd --version baseline --do-eval --method nml
+
+python main.py --task star --version baseline --do-eval --method mahalanobis_preds
