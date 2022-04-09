@@ -65,6 +65,12 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
     preloader = get_dataloader(args, datasets['train'], split='train')
     clusters = make_clusters(args, preloader, model, exp_logger, split)
     outputs = process_diff(args, clusters, *outputs)
+  if args.version == 'baseline' and args.method in ['mahalanobis_preds']:
+    
+    preloader = get_dataloader(args, datasets['train'], split='train')
+    clusters = make_clusters_pred(args, preloader, model, exp_logger, split)
+    outputs = process_diff(args, clusters, *outputs)
+
   elif args.version == 'baseline' and args.method == 'dropout':
     outputs = process_drop(args, *outputs, exp_logger)
   elif args.version == 'baseline' and args.method == 'nml':

@@ -117,7 +117,7 @@ class IntentModel(BaseModel):
   def forward(self, inputs, targets, outcome='loss'):
     enc_out = self.encoder(**inputs)
     sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
-    return_pre_classifier = outcome == 'nml'
+    return_pre_classifier = (outcome == 'nml') or (outcome == 'mahalanobis_preds')
     
     # # ###Mix-up
     # if outcome == 'loss' and self.mixedup == 1:
@@ -168,6 +168,8 @@ class IntentModel(BaseModel):
     
     pre_classifier = hidden
     if outcome == 'nml':
+      pre_classifier, logit = self.classify(hidden, outcome)
+    elif outcome == 'mahalanobis_preds':
       pre_classifier, logit = self.classify(hidden, outcome)
     else:
       logit = self.classify(hidden, outcome) # batch_size, num_intents
@@ -222,6 +224,8 @@ class Classifier(nn.Module):
 
     if outcome in ['bert_embed', 'mahalanobis', 'gradient']:
       return middle
+    elif outcome == 'mahalanobis_preds':
+      return (middle, logit)
     elif outcome == 'nml':
       norm = torch.linalg.norm(middle, dim=-1, keepdim=True)
       middle_normalized = middle / norm

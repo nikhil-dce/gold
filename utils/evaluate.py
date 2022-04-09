@@ -246,6 +246,30 @@ def compute_centroids(vectors, labels):
   centroids = torch.stack(centers)          # (num_intents, hidden_dim)
   return centroids
 
+def compute_centroids_soft_labels(vectors, probs):
+  '''cluster dialogues into different known groups based on labels  
+    vectors - a matrix of size (num_examples, hidden_dim)
+    probs - vector of size (num_examples, num_classes)
+  Returns:
+    centroids - matrix of size (num_intents, hidden_dim)
+  '''
+  # clusters = defaultdict(list)
+  # for vector, label in zip(vectors, labels):
+  #   key = 'intent_' + str(int(label.item() + 1))
+  #   clusters[key].append(vector)
+
+  mc = torch.unsqueeze(torch.sum(probs, dim=0), dim=1) # [num_classes, 1]
+  centroids = torch.matmul(probs, vectors.T) / mc # [num_intents, hidden_dim]
+  centroids = centroids.detach()
+  # centers = []
+  # for intent, nodes in clusters.items():
+  #   cluster = torch.stack(nodes)           # (variable, hidden_dim)
+  #   center = torch.mean(cluster, axis=0)   # (hidden_dim, )
+  #   centers.append(center)
+  # centroids = torch.stack(centers)          # (num_intents, hidden_dim)
+
+  return centroids
+
 def make_projection_matrices(args, dataloader, model, exp_logger, split):
   
   # Consider creating cache for projection matrices.
@@ -319,6 +343,21 @@ def make_clusters(args, dataloader, model, exp_logger, split):
   print(f'Saved centroids of shape {centroids.shape} to {cache_results}')
   return centroids
 
+def make_clusters_pred(args, dataloader, model, exp_logger, split):
+  ''' create the clusters and store in cache, number of clusters should equal the number
+  of intents.  Each cluster is represented by the coordinates of its centroid location '''
+  # cache_results, already_done = centroid_cache(args)
+  # if already_done:
+  #   return cache_results
+
+  logits, labels, _, vectors = run_inference(args, model, dataloader, exp_logger, split)
+  probs = torch.softmax(logits, dim=-1)
+  centroids = compute_centroids_soft_labels(vectors, probs)
+
+  # torch.save(centroids, cache_results)
+  # print(f'Saved centroids of shape {centroids.shape} to {cache_results}')
+  return centroids
+
 def make_covariance_matrix(args, vectors, clusters):
   if args.verbose:
     print("Creating covariance matrix")
@@ -379,8 +418,9 @@ def run_inference(args, model, dataloader, exp_logger, split):
       forward_out = model(inputs, labels, outcome=out)
     
     if args.method == 'nml':
-      pred, batch_loss, encoder_out = forward_out
-      all_encoder_out.append(encoder_out.detach().cpu())
+      pred, batch_loss, pre_classifier = forward_out
+      all_encoder_out.append(pre_classifier.detach().cpu())
+    
     else:
       pred, batch_loss = forward_out
     
@@ -397,9 +437,9 @@ def run_inference(args, model, dataloader, exp_logger, split):
   preds = combine_preds(predictions, exp_logger.version)
   targets = torch.cat(all_targets)
   
-  if args.method == 'nml':
+  if (args.method == 'nml') or (args.method == 'mahalanobis_preds'):
     # N: dataloader size, dim: encoder output dimension.
-    all_encoder_out = torch.cat(all_encoder_out) # [N, dim]
+    all_encoder_out = torch.cat(all_encoder_out, axis=0) # [N, dim]
     return preds, targets, exp_logger, all_encoder_out
   else:
     return preds, targets, exp_logger
