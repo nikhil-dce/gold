@@ -376,9 +376,19 @@ def make_covariance_matrix(args, vectors, clusters, labels):
     print("Creating covariance matrix")
 
   clusters_dict = defaultdict(list)
+  labels_dict = dict()
+  cnt = 0
   for vector, label in zip(vectors, labels):
-    key = int(label.item())
+    label_key = int(label.item())
+    if label_key in labels_dict:
+      key = labels_dict[label_key]
+    else:
+      key = cnt
+      labels_dict[label_key] = cnt
+      cnt += 1
+
     clusters_dict[key].append(vector)
+    
 
   # centers = []
   # for intent, nodes in clusters.items():
