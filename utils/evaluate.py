@@ -340,7 +340,7 @@ def make_clusters(args, dataloader, model, exp_logger, split):
 
   vectors, labels, _ = run_inference(args, model, dataloader, exp_logger, split)
   centroids = compute_centroids(vectors, labels)
-  inv_cov_matrix = make_covariance_matrix(args, vectors, centroids)
+  inv_cov_matrix = make_covariance_matrix(args, vectors, centroids, labels)
 
   # torch.save(centroids, cache_results)
   print(f'Centroids shape {centroids.shape}')
@@ -357,37 +357,75 @@ def make_clusters_pred(args, dataloader, model, exp_logger, split):
   logits, labels, _, vectors = run_inference(args, model, dataloader, exp_logger, split)
   probs = torch.softmax(logits, dim=-1)
   centroids = compute_centroids_soft_labels(vectors, probs)
-  inv_cov_matrix = make_covariance_matrix(args, vectors, centroids)
+  inv_cov_matrix = make_covariance_matrix_soft_labels(args, vectors, centroids, probs)
 
   # torch.save(centroids, cache_results)
   print(f'Centroids shape {centroids.shape}')
   # print(f'Saved centroids of shape {centroids.shape} to {cache_results}')
   return centroids, inv_cov_matrix
 
-def make_covariance_matrix(args, vectors, clusters):
+def make_covariance_matrix(args, vectors, clusters, labels):
+  """
+  Args:
+    vectors: [N_train, hidden_dim]
+    clusters: [num_classes, hidden_dim]
+    labels: [N_train] Integer labels.
+  """
+
   if args.verbose:
     print("Creating covariance matrix")
 
+  clusters_dict = defaultdict(list)
+  for vector, label in zip(vectors, labels):
+    key = int(label.item())
+    clusters_dict[key].append(vector)
+
+  # centers = []
+  # for intent, nodes in clusters.items():
+  #   cluster = torch.stack(nodes)           # (variable, hidden_dim)
+  #   center = torch.mean(cluster, axis=0)   # (hidden_dim, )
+  #   centers.append(center)
+  # centroids = torch.stack(centers)          # (num_intents, hidden_dim)
+
   num_intents, hidden_dim = clusters.shape
   covar = torch.zeros(hidden_dim, hidden_dim)
-  for cluster in progress_bar(clusters, total=num_intents):
-    for vector in vectors:
-      diff = (vector - cluster).unsqueeze(1)  # hidden_dim, 1
-      covar += torch.matmul(diff, diff.T)           # hidden_dim, hidden_dim
+
+  ##
+  for cluster_ix, vector_list in clusters.items():
+    cluster = torch.unsqueeze(clusters_dict[cluster_ix], dim=0) # [1, hidden_dim]
+    # vector_list [Nc, hidden_dim]
+    diff = (vector_list - cluster) # [Nc, hidden_dim]
+    covar += torch.matmul(diff.T , diff) # [hidden_dim, hidden_dim]
+  ##
+
+  # for cluster in progress_bar(clusters, total=num_intents):
+  #   for vector in vectors:
+  #     diff = (vector - cluster).unsqueeze(1)  # hidden_dim, 1
+  #     covar += torch.matmul(diff, diff.T)           # hidden_dim, hidden_dim
+  
   covar /= len(vectors)                       # divide by a scalar throughout
   inv_cov_matrix = np.linalg.inv(covar)
   return torch.tensor(inv_cov_matrix)
 
-def make_covariance_matrix_preds(args, vectors, clusters):
+def make_covariance_matrix_soft_labels(args, vectors, clusters, probs):
+  """
+  Args:
+    vectors: [N_train, hidden_dim]
+    clusters: [num_classes, hidden_dim]
+    probs: [N_train, num_classes]
+  """
+
   if args.verbose:
     print("Creating covariance matrix")
 
   num_intents, hidden_dim = clusters.shape
   covar = torch.zeros(hidden_dim, hidden_dim)
-  for cluster in progress_bar(clusters, total=num_intents):
-    for vector in vectors:
-      diff = (vector - cluster).unsqueeze(1)  # hidden_dim, 1
-      covar += torch.matmul(diff, diff.T)           # hidden_dim, hidden_dim
+  for class_ix, cluster in enumerate(progress_bar(clusters, total=num_intents)):
+    # cluster [hidden_dim]
+    for sample_ix, vector in enumerate(vectors):
+      # vector [hidden_dim]
+      diff = (vector - cluster).unsqueeze(1)  # [hidden_dim, 1]
+      covar += probs[sample_ix, class_ix] * torch.matmul(diff, diff.T) # hidden_dim, hidden_dim
   covar /= len(vectors)                       # divide by a scalar throughout
   inv_cov_matrix = np.linalg.inv(covar)
   return torch.tensor(inv_cov_matrix)
