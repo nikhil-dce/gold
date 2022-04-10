@@ -11,7 +11,9 @@ from assets.static_vars import device, debug_break, direct_modes
 from utils.help import set_seed, setup_gpus, check_directories, prepare_inputs
 from utils.process import get_dataloader, check_cache, prepare_features, process_data
 from utils.load import load_data, load_tokenizer, load_ontology, load_best_model
-from utils.evaluate import make_clusters, make_projection_matrices, process_diff, process_drop, quantify, run_inference, make_projection_matrices, process_nml, make_clusters_pred, make_covariance_matrix, make_covariance_matrix_soft_labels
+from utils.evaluate import (make_clusters, make_projection_matrices, 
+  process_diff, process_drop, quantify, run_inference, make_projection_matrices,
+  process_nml, make_clusters_pred, make_projection_matrices_and_clusters)
 from utils.arguments import solicit_params
 from app import augment_features
 
@@ -65,12 +67,32 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
     preloader = get_dataloader(args, datasets['train'], split='train')
     clusters, inv_cov_matrix = make_clusters(args, preloader, model, exp_logger, split)
     outputs = process_diff(args, clusters, inv_cov_matrix, *outputs)
-  elif args.version == 'baseline' and args.method in ['mahalanobis_preds']:
+  elif args.version == 'baseline' and args.method == 'mahalanobis_preds':
     preloader = get_dataloader(args, datasets['train'], split='dev')
     clusters, inv_cov_matrix = make_clusters_pred(args, preloader, model, exp_logger, split)
     _, test_targets, exp_logger, test_all_encoder_out = outputs
     new_outputs = test_all_encoder_out, test_targets, exp_logger
     outputs = process_diff(args, clusters, inv_cov_matrix, *new_outputs)
+  elif args.version == 'baseline' and args.method == 'mahalanobis_nml':
+    # Use `middle` (vectors) for preds like in mahalanobis.
+    # Use `hidden` embedding for the projection matrix used in NML.
+    # `run_inference` returns: preds/vectors (middle), targets, exp_logger, all_encoder_out (hidden)
+    preloader = get_dataloader(args, datasets['train'], split='dev')
+    p_parallel, p_bot, clusters, inv_cov_matrix = make_projection_matrices_and_clusters(
+      args, preloader, model, exp_logger, split)
+    # clusters, inv_cov_matrix = make_clusters(args, preloader, model, exp_logger, split)
+    # p_parallel, p_bot = make_projection_matrices(args, preloader, model, exp_logger, split)
+
+    # vectors, test_targets, exp_logger, test_all_encoder_out = outputs  
+    
+    # process_diff uses vector to compute probs for test examples using mahalanobis.
+    probs = process_diff(args, clusters, inv_cov_matrix, *outputs[:-1])[0]
+    # process_nml uses all_encoder_out (hidden) to compute the pnml regret.
+
+    new_outputs = probs, outputs[1], outputs[2], outputs[0]
+    # probs, targets, exp_logger, testset
+    outputs = process_nml(args, p_parallel, p_bot, *new_outputs)
+
   elif args.version == 'baseline' and args.method == 'dropout':
     outputs = process_drop(args, *outputs, exp_logger)
   elif args.version == 'baseline' and args.method == 'nml':

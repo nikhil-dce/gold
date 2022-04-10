@@ -117,35 +117,8 @@ class IntentModel(BaseModel):
   def forward(self, inputs, targets, outcome='loss'):
     enc_out = self.encoder(**inputs)
     sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
-    return_pre_classifier = (outcome == 'nml') or (outcome == 'mahalanobis_preds')
+    return_pre_classifier = outcome in ['nml', 'mahalanobis_preds', 'mahalanobis_nml']
     
-    # # ###Mix-up
-    # if outcome == 'loss' and self.mixedup == 1:
-    #   batch_s = pooled.shape[0]
-    #   mix_up_indxs = []
-      
-    #   targets_mod = targets.clone()
-    #   #alpha = 0.2
-    #   #lam = np.random.beta(alpha, alpha)
-    #   for i in range(0, batch_s):
-    #     if i % 5 == 0:
-    #       mix_up_indxs.append(i)
-      
-    #   lambda_v = torch.ones(batch_s).cuda()
-
-    #   for idx in mix_up_indxs:
-    #     alpha = 0.2
-    #     lam = np.random.beta(alpha, alpha)
-    #     lambda_v[idx] = lam
-    #     to_be_mixed_idx = random.randint(batch_s)
-    #     #pdb.set_trace()
-    #     sequence[idx] = lam * sequence[idx] + (1- lam) * sequence[to_be_mixed_idx]
-    #     pooled[idx] = lam * pooled[idx] + (1- lam) * pooled[to_be_mixed_idx]
-        
-    #     targets_mod[idx] = to_be_mixed_idx
-    #     #targets[idx] = lam * targets[idx] + (1-lam) * targets[to_be_mixed_idx]
-    
-    #pdb.set_trace()
     hidden = sequence[:, 0, :] # batch_size, embed_dim
 
     ###Mix-up
@@ -197,7 +170,7 @@ class IntentModel(BaseModel):
     elif outcome in ['dropout', 'maxprob', 'nml']:
       output = self.softmax(logit)
     elif outcome in ['odin', 'entropy']:
-      output = self.softmax(logit / self.temperature)
+      output = self.softmax(logit / self.temperature)  
     else:                   # used by the 'direct' methods during evaluation
       output = logit
     
@@ -222,10 +195,10 @@ class Classifier(nn.Module):
     logit = self.bottom(middle)
     # logit has shape (batch_size, num_slots)
 
-    if outcome in ['bert_embed', 'mahalanobis', 'gradient']:
+    if outcome in ['bert_embed', 'mahalanobis', 'gradient', 'mahalanobis_nml']:
       return middle
     elif outcome == 'mahalanobis_preds':
-      return (middle, logit)
+      return (middle, logit)   
     elif outcome == 'nml':
       norm = torch.linalg.norm(middle, dim=-1, keepdim=True)
       middle_normalized = middle / norm

@@ -15,7 +15,7 @@
 # python main.py --task flow --version baseline --do-eval --method bert_embed
 # python main.py --task rostd --version baseline --do-eval --method bert_embed
 
-python main.py --task star --version baseline --do-eval --method mahalanobis
+# python main.py --task star --version baseline --do-eval --method mahalanobis
 # python main.py --task flow --version baseline --do-eval --method mahalanobis
 # python main.py --task rostd --version baseline --do-eval --method mahalanobis
 
@@ -36,3 +36,7 @@ python main.py --task star --version baseline --do-eval --method mahalanobis
 # python main.py --task rostd --version baseline --do-eval --method nml
 
 # python main.py --task star --version baseline --do-eval --method mahalanobis_preds
+
+python main.py --task star --version baseline --do-eval --method mahalanobis_nml
+python main.py --task flow --version baseline --do-eval --method mahalanobis_nml
+python main.py --task rostd --version baseline --do-eval --method mahalanobis_nml

@@ -42,6 +42,7 @@ def quantify(args, predictions, targets, exp_logger, split):
     y_score = predictions.cpu().numpy()
     results = {'epoch': exp_logger.epoch, 'aupr': average_precision_score(y_true, y_score) }
   else:
+    # pdb.set_trace()
     results = binary_curve(args, predictions, targets, exp_logger)
 
   if split != 'train':
@@ -270,6 +271,42 @@ def compute_centroids_soft_labels(vectors, probs):
 
   return centroids
 
+def make_projection_matrices_and_clusters(args, dataloader, model, exp_logger, split):
+  # Consider creating cache for projection matrices.
+  # cache_results, already_done = projection_matrices_cache(args)
+  # if already_done:
+  #   return cache_results
+
+  # vectors = middle
+  # train_feats = hidden
+  vectors, labels, _, train_feats = run_inference(args, model, dataloader, exp_logger, split)
+  norm = torch.linalg.norm(vectors, dim=-1, keepdim=True)
+  vectors = vectors / norm
+
+  # Make projection matrices
+  # train_feats = train_feats.cpu()
+  train_feats = vectors.cpu()
+
+  # Calc x_Bot
+  n, m = train_feats.shape
+  p = train_feats.T @ train_feats
+  p_numpy = p.cpu().detach().numpy()
+  p_parallel = np.linalg.pinv(p)
+  p_bot = np.eye(m) - p_parallel @ p_numpy
+  # torch.save((p_parallel, p_bot), cache_results)
+
+  print(f'p_parallel of shape {p_parallel.shape}.')
+  print(f'p_bot of shape {p_bot.shape}.')
+
+  # Make clusters
+  centroids = compute_centroids(vectors, labels)
+  inv_cov_matrix = make_covariance_matrix(args, vectors, centroids, labels)
+  # torch.save(centroids, cache_results)
+  print(f'Centroids shape {centroids.shape}')
+  # print(f'Saved centroids of shape {centroids.shape} to {cache_results}')
+  
+  return p_parallel, p_bot, centroids, inv_cov_matrix
+
 def make_projection_matrices(args, dataloader, model, exp_logger, split):
   
   # Consider creating cache for projection matrices.
@@ -298,13 +335,16 @@ def process_nml(args, p_parallel, p_bot, probs, targets, exp_logger, testset):
     Calculate the genie probability
 
     Args:
-      :param probs: The model probability of the dataset: (n,)
       :param p_parallel: projection matrix, the parrallel component
       :param p_bot: projection matrix, the orthogonal component
+      :param probs: The model probability of the dataset: (n,)
+      :param targets: Labels
       :param testset: tte dataset to evaluate: (n,m)
   """
-  
-  #pdb.set_trace()
+
+  norm = torch.linalg.norm(testset, dim=-1, keepdim=True)
+  testset = testset / norm
+
   p_bot = p_bot.astype(np.float32)
 
   test_feats = testset.cpu()
@@ -318,12 +358,12 @@ def process_nml(args, p_parallel, p_bot, probs, targets, exp_logger, testset):
   x_t_g = np.expand_dims(x_t_g, -1)
   x_t_g_repeated = np.repeat(x_t_g, n_classes, axis=1)
   
-  #pdb.set_trace()
   x_t_g_repeated_torch = torch.from_numpy(x_t_g_repeated)
   # Genie prediction
   probs = torch.exp(probs)
-  genie_predictions = probs / (probs + (1 - probs) * (probs ** x_t_g_repeated_torch))
+  genie_predictions = probs / (1e-6 + probs + (1. - probs) * (probs ** x_t_g_repeated_torch))
 
+  # pdb.set_trace()
   # Regret
   nfs = genie_predictions.sum(axis=1)
   regrets = np.log(nfs) / np.log(n_classes)
@@ -338,7 +378,12 @@ def make_clusters(args, dataloader, model, exp_logger, split):
   # if already_done:
   #   return cache_results
 
-  vectors, labels, _ = run_inference(args, model, dataloader, exp_logger, split)
+  if args.method == 'mahalanobis_nml':
+    vectors, labels, _, _ = run_inference(args, model, dataloader, exp_logger, split)
+  else:
+    vectors, labels, _ = run_inference(args, model, dataloader, exp_logger, split)
+
+  # vectors, labels, _ = run_inference(args, model, dataloader, exp_logger, split)
   centroids = compute_centroids(vectors, labels)
   inv_cov_matrix = make_covariance_matrix(args, vectors, centroids, labels)
 
@@ -452,19 +497,32 @@ def mahala_dist(x, mu, VI):
 def process_diff(args, clusters, inv_cov_matrix, vectors, targets, exp_logger):
   ''' figure out how far from clusters '''
   # inv_cov_matrix = make_covariance_matrix(args, vectors, clusters)
-  uncertainty_preds = []
+  output = []
   
   for vector in progress_bar(vectors, total=len(vectors)):
     if args.method == 'mahalanobis':
       distances = [mahala_dist(vector, cluster, inv_cov_matrix) for cluster in clusters]
       min_distance = min(distances)
+      output.append(min_distance.item())
+    elif args.method == 'mahalanobis_nml':
+      distances = [-0.5*mahala_dist(vector, cluster, inv_cov_matrix) for cluster in clusters]
+      distances = torch.cat(distances, dim=1)
+      probs = torch.log_softmax(distances, dim=-1)
+      output.append(probs)
     else:
       distances =  torch.cdist(vector.unsqueeze(0), clusters, p=2)  # 2 is for L2-norm
       min_distance = torch.min(distances)  # each distance is a scalar
-    uncertainty_preds.append(min_distance.item())
+      output.append(min_distance.item())
+    
     # if the min_dist is greater than some threshold, then it is uncertain
     # uncertainty_preds.append(min_distance.item() > args.threshold)
-  return torch.tensor(uncertainty_preds), targets, exp_logger
+  
+  if args.method == 'mahalanobis_nml':
+    output = torch.cat(output, dim=0)
+  else:
+    output = torch.tensor(output)
+
+  return output, targets, exp_logger
 
 
 def run_inference(args, model, dataloader, exp_logger, split):
@@ -486,7 +544,7 @@ def run_inference(args, model, dataloader, exp_logger, split):
     with torch.no_grad():
       forward_out = model(inputs, labels, outcome=out)
     
-    if (args.method == 'nml') or (args.method == 'mahalanobis_preds'):
+    if args.method in ['nml', 'mahalanobis_preds', 'mahalanobis_nml']:
       pred, batch_loss, pre_classifier = forward_out
       all_encoder_out.append(pre_classifier.detach().cpu())
     else:
@@ -505,7 +563,7 @@ def run_inference(args, model, dataloader, exp_logger, split):
   preds = combine_preds(predictions, exp_logger.version)
   targets = torch.cat(all_targets)
   
-  if (args.method == 'nml') or (args.method == 'mahalanobis_preds'):
+  if args.method in ['nml', 'mahalanobis_preds', 'mahalanobis_nml']:
     # N: dataloader size, dim: encoder output dimension.
     all_encoder_out = torch.cat(all_encoder_out, axis=0) # [N, dim]
     return preds, targets, exp_logger, all_encoder_out
