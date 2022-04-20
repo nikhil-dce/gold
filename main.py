@@ -17,6 +17,7 @@ from utils.evaluate import (make_clusters, make_projection_matrices,
 from utils.arguments import solicit_params
 from app import augment_features
 
+from utils.get_keywords import get_keywords
 import pdb
 def run_train(args, model, datasets, tokenizer, exp_logger):
   train_dataloader = get_dataloader(args, datasets['train'], split='train')
@@ -56,7 +57,15 @@ def run_train(args, model, datasets, tokenizer, exp_logger):
   return exp_logger.best_score
 
 def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
+
+  ##masker
+  train_dataloader = get_dataloader(args, datasets['train'], split)
+  get_keywords(args, train_dataloader)
+  #pdb.set_trace()
+  ##masker
+
   dataloader = get_dataloader(args, datasets[split], split)
+
   if split == 'test':
     if args.version == 'augment':
       model.load_dir = model.save_dir
@@ -114,6 +123,7 @@ if __name__ == "__main__":
   tokenizer = load_tokenizer(args)
   ontology = load_ontology(args)
 
+  
   if already_exist:
     features = cache_results
   else:
