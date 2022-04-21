@@ -74,5 +74,7 @@ def solicit_params():
     parser.add_argument("--mixup", default=0, type=int,
                 help="Enable mix-up or not")
                 
+    # Masker
+    parser.add_argument("--masker", default = False, type = bool)
     args = parser.parse_args()
     return args
