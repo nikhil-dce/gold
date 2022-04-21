@@ -17,7 +17,7 @@ from utils.evaluate import (make_clusters, make_projection_matrices,
 from utils.arguments import solicit_params
 from app import augment_features
 
-from utils.get_keywords import get_keywords, masked_dataset
+from utils.masker import get_keywords
 import pdb
 def run_train(args, model, datasets, tokenizer, exp_logger):
   train_dataloader = get_dataloader(args, datasets['train'], split='train')

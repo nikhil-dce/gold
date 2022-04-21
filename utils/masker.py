@@ -147,14 +147,17 @@ def masked_dataset(tokenizer, dataset, keyword=None,
     masked_tokens = []
     masked_labels = []
 
+    attention_masks = []
+    input_type_ids = []
+
     for _, batch in enumerate(dataset):
         inputs, labels = prepare_inputs(batch, _)
-        for (token, label) in zip(inputs['input_ids'], labels):
+        for (token, type_id, mask, label) in zip(inputs['input_ids'], inputs['token_type_ids'], inputs['attention_mask'], labels):
             m_token = token.clone()  # masked token (for self-supervision)
             o_token = token.clone()  # outlier token (for entropy regularization)
             m_label = -torch.ones(token.size(0) + 1).long()  # self-sup labels + class label
 
-            for i, tok in enumerate(token):
+            for i , tok in enumerate(token):
                 if tok == CLS_TOKEN:
                     continue
                 elif tok == PAD_TOKEN:
@@ -170,15 +173,23 @@ def masked_dataset(tokenizer, dataset, keyword=None,
                 if (keyword is not None) and (tok.item() not in keyword):
                     if random.random() < out_mask_ratio:  # randomly mask non-keywords
                         o_token[i] = MASK_TOKEN
+                
 
             m_label[-1] = label  # class label
 
             masked_tokens.append(torch.cat([token, m_token, o_token]))  # (original, masked, outlier)
             masked_labels.append(m_label)
 
+            input_type_ids.append(type_id)
+            attention_masks.append(mask)
+
     masked_tokens = torch.stack(masked_tokens)
     masked_labels = torch.stack(masked_labels)
 
-    masked_dataset = TensorDataset(masked_tokens, masked_labels)
+    input_type_ids = torch.stack(input_type_ids)
+    attention_masks = torch.stack(attention_masks)
 
+    #pdb.set_trace()
+    masked_dataset = TensorDataset(masked_tokens, input_type_ids, attention_masks, masked_labels)
+    torch.save(masked_dataset,'/work/ds448/gold_mod/gold/utils/masked_dataset.pt')
     return masked_dataset
