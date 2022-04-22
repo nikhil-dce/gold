@@ -222,6 +222,9 @@ class MaskerIntentModel(IntentModel):
   
   def forward(self, inputs, targets, outcome='loss'):
 
+      labels_ssl = targets[:, :-1]  # self-sup labels (B, K)
+      targets = targets[:, -1]  # class labels (B)
+
       #masked token
       enc_out = self.encoder(inputs['input_ids_masked'], inputs['token_type_ids'], inputs['attention_mask'])
       sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
