@@ -12,10 +12,13 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 import pdb
-def get_dataloader(args, dataset, split='train'):
+def get_dataloader(args, dataset, split='train', use_collate=True):
   tr_10k = torch.utils.data.Subset(dataset, range(500))
   sampler = RandomSampler(dataset) if split == 'train' else SequentialSampler(dataset)
-  collate = dataset.collate_func
+  if use_collate:
+    collate = dataset.collate_func
+  else:
+    collate = None
   # batch size is 1 to avoid gradient of multiple examples from mixing together
   b_size = 1 if args.method == 'gradient' else args.batch_size
   dataloader = DataLoader(dataset, sampler=sampler, batch_size=b_size, collate_fn=collate)

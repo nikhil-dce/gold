@@ -191,5 +191,6 @@ def masked_dataset(tokenizer, dataset, keyword=None,
 
     #pdb.set_trace()
     masked_dataset = TensorDataset(masked_tokens, input_type_ids, attention_masks, masked_labels)
+    #masked_tokens Nx768, attention_masks Nx256, 
     torch.save(masked_dataset,'/work/ds448/gold_mod/gold/utils/masked_dataset.pt')
-    return masked_dataset
+    return masked_dataset, keyword

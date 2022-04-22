@@ -74,6 +74,26 @@ def prepare_inputs(batch, model, use_text=False):
     else:
         return inputs, targets
 
+
+def prepare_inputs_masker(batch, model, use_text=False):
+    ''' Inputs: the batches from the collate function in the Dataset
+    Outputs: something that a nn.Module model can consume, with inputs on device '''
+    # batch = [b.to(device) for b in batch]
+    # inputs = {'input_ids': batch[0], 'token_type_ids': batch[1], 'attention_mask': batch[2]} 
+    # targets = batch[3]
+    btt = [b.to(device) for b in batch[:4]]
+    inputs = {'input_ids': btt[0][0:256], 'input_ids_masked': btt[0][256:512],
+                'input_ids_ood': btt[0][512:768], 
+                'token_type_ids': btt[1], 'attention_mask': btt[2]} 
+    targets = btt[3][-1]
+    masked_targets = btt[3][0:-1]
+
+    if use_text:
+        target_text = batch[4]
+        return inputs, targets, target_text
+    else:
+        return inputs, targets, masked_targets
+
 def contains(smaller, larger, use_stop=False):
     ''' checks is the larger list contains the smaller list and returns the index if True '''
     for index, element in enumerate(larger):

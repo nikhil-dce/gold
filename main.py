@@ -5,10 +5,10 @@ import torch
 
 from tqdm import tqdm as progress_bar
 from components.logger import ExperienceLogger
-from components.models import BaseModel, IntentModel
+from components.models import BaseModel, IntentModel, MaskerIntentModel
 from assets.static_vars import device, debug_break, direct_modes
 
-from utils.help import set_seed, setup_gpus, check_directories, prepare_inputs
+from utils.help import prepare_inputs_masker, set_seed, setup_gpus, check_directories, prepare_inputs
 from utils.process import get_dataloader, check_cache, prepare_features, process_data
 from utils.load import load_data, load_tokenizer, load_ontology, load_best_model
 from utils.evaluate import (make_clusters, make_projection_matrices, 
@@ -107,6 +107,45 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
   results = quantify(args, *outputs, split)
   return results
   
+
+def run_train_masker(args, model, datasets, tokenizer, exp_logger):
+  train_dataloader = get_dataloader(args, datasets, split='train', use_collate= False)
+  total_steps = len(train_dataloader) // args.n_epochs
+  model.setup_optimizer_scheduler(args.learning_rate, total_steps)
+
+  for epoch_count in range(exp_logger.num_epochs):
+    exp_logger.start_epoch(train_dataloader)
+    train_metric = ''
+    model.train()
+
+    for step, batch in enumerate(train_dataloader):
+      inputs, labels = prepare_inputs_masker(batch, model)
+      #pdb.set_trace()
+      pred, pred_m, pred_ood, loss = model(inputs, labels)
+
+      exp_logger.tr_loss += loss.item()
+      loss.backward()
+
+      if args.verbose:
+        train_results = quantify(args, pred.detach(), labels.detach(), exp_logger, "train")
+        train_metric = train_results[exp_logger.metric]
+      torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+      model.optimizer.step()  # backprop to update the weights
+      model.scheduler.step()  # Update learning rate schedule
+      model.zero_grad()
+      exp_logger.log_train(step, train_metric)
+      if args.debug and step >= debug_break*args.log_interval:
+        break
+
+    eval_res = run_eval(args, model, datasets, tokenizer, exp_logger)
+    if args.do_save and eval_res[exp_logger.metric] >= exp_logger.best_score[exp_logger.metric]:
+      exp_logger.best_score = eval_res
+      exp_logger.save_best_model(model, tokenizer)
+    early_stop = exp_logger.end_epoch()
+    if early_stop: break
+
+  return exp_logger.best_score
+
 if __name__ == "__main__":
   args = solicit_params()
   args = setup_gpus(args)
@@ -132,17 +171,16 @@ if __name__ == "__main__":
     model = BaseModel(args, ontology, tokenizer).to(device)
   elif args.version == 'baseline':
     model = IntentModel(args, ontology, tokenizer).to(device)
+  elif args.masker == True:
+    train_dataloader = get_dataloader(args, datasets['train'], split='dev')
+    masked_dataset, keyword = get_keywords(args, train_dataloader)
+    model = MaskerIntentModel(args, ontology, tokenizer, len(keyword)).to(device)
   exp_logger = ExperienceLogger(args, model.save_dir)
   
   if args.do_train:
-    best_score = run_train(args, model, datasets, tokenizer, exp_logger)
+    if args.masker == True:
+      best_score = run_train_masker(args, model, datasets, tokenizer, exp_logger)
+    else:
+      best_score = run_train(args, model, datasets, tokenizer, exp_logger)
   if args.do_eval:
     run_eval(args, model, datasets, tokenizer, exp_logger, split='test')
-  if args.masker == True:
-     ##masker
-     #pdb.set_trace()
-     train_dataloader = get_dataloader(args, datasets['train'], split='dev')
-     masked_dataset = get_keywords(args, train_dataloader)
-     
-     #pdb.set_trace()
-     ##masker
