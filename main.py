@@ -66,17 +66,17 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
     model = load_best_model(args, model, device)
 
   outputs = run_inference(args, model, dataloader, exp_logger, split)
-  if args.version == 'baseline' and args.method in ['bert_embed', 'mahalanobis', 'gradient']:
+  if args.version == 'baseline' or 'masker' and args.method in ['bert_embed', 'mahalanobis', 'gradient']:
     preloader = get_dataloader(args, datasets['train'], split='train')
     clusters, inv_cov_matrix = make_clusters(args, preloader, model, exp_logger, split)
     outputs = process_diff(args, clusters, inv_cov_matrix, *outputs)
-  elif args.version == 'baseline' and args.method == 'mahalanobis_preds':
+  elif args.version == 'baseline' or 'masker' and args.method == 'mahalanobis_preds':
     preloader = get_dataloader(args, datasets['train'], split='dev')
     clusters, inv_cov_matrix = make_clusters_pred(args, preloader, model, exp_logger, split)
     _, test_targets, exp_logger, test_all_encoder_out = outputs
     new_outputs = test_all_encoder_out, test_targets, exp_logger
     outputs = process_diff(args, clusters, inv_cov_matrix, *new_outputs)
-  elif args.version == 'baseline' and args.method == 'mahalanobis_nml':
+  elif args.version == 'baseline' or 'masker' and args.method == 'mahalanobis_nml':
     # Use `middle` (vectors) for preds like in mahalanobis.
     # Use `hidden` embedding for the projection matrix used in NML.
     # `run_inference` returns: preds/vectors (middle), targets, exp_logger, all_encoder_out (hidden)
@@ -96,9 +96,9 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
     # probs, targets, exp_logger, testset
     outputs = process_nml(args, p_parallel, p_bot, *new_outputs)
 
-  elif args.version == 'baseline' and args.method == 'dropout':
+  elif args.version == 'baseline' or 'masker' and args.method == 'dropout':
     outputs = process_drop(args, *outputs, exp_logger)
-  elif args.version == 'baseline' and args.method == 'nml':
+  elif args.version == 'baseline' or 'masker' and args.method == 'nml':
     # preloader = get_dataloader(args, datasets['train'], split='train')
     preloader = get_dataloader(args, datasets['train'], split='dev')
     p_parallel, p_bot = make_projection_matrices(args, preloader, model, exp_logger, split)
@@ -108,8 +108,8 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
   return results
   
 
-def run_train_masker(args, model, datasets, tokenizer, exp_logger):
-  train_dataloader = get_dataloader(args, datasets, split='train', use_collate= False)
+def run_train_masker(args, model, masked_dataset, datasets, tokenizer, exp_logger):
+  train_dataloader = get_dataloader(args, masked_dataset, split='train', use_collate= False)
   total_steps = len(train_dataloader) // args.n_epochs
   model.setup_optimizer_scheduler(args.learning_rate, total_steps)
 
@@ -119,9 +119,9 @@ def run_train_masker(args, model, datasets, tokenizer, exp_logger):
     model.train()
 
     for step, batch in enumerate(train_dataloader):
-      inputs, labels = prepare_inputs_masker(batch, model)
+      inputs, labels, masked_labels = prepare_inputs_masker(batch, model)
       #pdb.set_trace()
-      pred, pred_m, pred_ood, loss = model(inputs, labels)
+      pred, pred_m, pred_ood, loss = model(inputs, labels, masked_labels)
 
       exp_logger.tr_loss += loss.item()
       loss.backward()
@@ -137,10 +137,14 @@ def run_train_masker(args, model, datasets, tokenizer, exp_logger):
       if args.debug and step >= debug_break*args.log_interval:
         break
 
-    eval_res = run_eval(args, model, datasets, tokenizer, exp_logger)
-    if args.do_save and eval_res[exp_logger.metric] >= exp_logger.best_score[exp_logger.metric]:
-      exp_logger.best_score = eval_res
-      exp_logger.save_best_model(model, tokenizer)
+    # eval_res = run_eval(args, model, datasets, tokenizer, exp_logger)
+    # if args.do_save and eval_res[exp_logger.metric] >= exp_logger.best_score[exp_logger.metric]:
+    #   exp_logger.best_score = eval_res
+    #   exp_logger.save_best_model(model, tokenizer)
+    model_to_save = model.module if hasattr(model, 'module') else model
+    ckpt_path = os.path.join(model.save_dir, "Masker_epoch" + str(epoch_count) + ".pt")
+    torch.save(model_to_save.state_dict(), ckpt_path)
+
     early_stop = exp_logger.end_epoch()
     if early_stop: break
 
@@ -171,16 +175,24 @@ if __name__ == "__main__":
     model = BaseModel(args, ontology, tokenizer).to(device)
   elif args.version == 'baseline':
     model = IntentModel(args, ontology, tokenizer).to(device)
-  elif args.masker == True:
-    train_dataloader = get_dataloader(args, datasets['train'], split='dev')
-    masked_dataset, keyword = get_keywords(args, train_dataloader)
+  elif args.version == 'masker':
+    #train_dataloader = get_dataloader(args, datasets['train'], split='dev')
+    #masked_dataset, keyword = get_keywords(args, train_dataloader)
+    #get_keywords(args, train_dataloader)
+    masked_dataset = torch.load('/work/ds448/gold_mod/gold/utils/masked_dataset.pt')
+    keyword = torch.load("/work/ds448/gold_mod/gold/utils/keyword_10perclass.pth")
+    #pdb.set_trace()
     model = MaskerIntentModel(args, ontology, tokenizer, len(keyword)).to(device)
   exp_logger = ExperienceLogger(args, model.save_dir)
   
   if args.do_train:
-    if args.masker == True:
-      best_score = run_train_masker(args, model, datasets, tokenizer, exp_logger)
+    if args.version == 'masker':
+      best_score = run_train_masker(args, model, masked_dataset, datasets, tokenizer, exp_logger)
     else:
       best_score = run_train(args, model, datasets, tokenizer, exp_logger)
   if args.do_eval:
+    #checkpoint = torch.load("/work/ds448/gold_mod/gold/results/star/masker/Masker_epoch0.pt", map_location='cpu')
+    #model.load_state_dict(checkpoint)
+    #model.eval()
+    #model.to(device)
     run_eval(args, model, datasets, tokenizer, exp_logger, split='test')

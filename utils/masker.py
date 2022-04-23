@@ -44,7 +44,8 @@ def get_keywords(args, dataset):
     attn_model, tokenizer = backbone(args, True)
     attn_model.to(device)  # only backbone
     CKPT_PATH = "/work/ds448/gold_mod/gold/results/star/baseline"
-    attn_model_path = "/work/ds448/gold_mod/gold/results/star/baseline/epoch12_star_lr1e-05_acc688.pt"
+    # args.best_base_model "/work/ds448/gold_mod/gold/results/star/baseline/epoch12_star_lr1e-05_acc688.pt"
+    attn_model_path = args.best_base_model
     #assert args.attn_model_path is not None
     state_dict = torch.load(os.path.join(CKPT_PATH, "star", attn_model_path))
 
@@ -125,7 +126,7 @@ def get_attention_keyword(dataset, tokenizer, attn_model, keyword_per_class=10):
 
     return keyword
 
-def masked_dataset(tokenizer, dataset, keyword=None,
+def masked_dataset(tokenizer, dataset, keyword,
                     seed=0, key_mask_ratio=0.5, out_mask_ratio=0.9):
    
     #keyword_dict = dict.fromkeys(keyword, i for i in range(len(keyword)))  # convert to dict
@@ -192,5 +193,7 @@ def masked_dataset(tokenizer, dataset, keyword=None,
     #pdb.set_trace()
     masked_dataset = TensorDataset(masked_tokens, input_type_ids, attention_masks, masked_labels)
     #masked_tokens Nx768, attention_masks Nx256, 
-    torch.save(masked_dataset,'/work/ds448/gold_mod/gold/utils/masked_dataset.pt')
-    return masked_dataset, keyword
+    dataset_path = '/work/ds448/gold_mod/gold/utils/masked_dataset.pt'
+    torch.save(masked_dataset, dataset_path)
+    print("Masked dataset saved in " + dataset_path)
+    #return masked_dataset, keyword

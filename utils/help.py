@@ -1,4 +1,5 @@
 import os
+import pdb
 import numpy as np
 import torch
 import random
@@ -35,6 +36,8 @@ def check_directories(args):
         folder = 'baseline' if args.do_train else args.method
     elif args.version == 'augment':
         folder = args.technique
+    elif args.version == 'masker':
+        folder = 'masker' if args.do_train else args.method
     
     save_path = os.path.join(task_path, folder)
     if not os.path.exists(save_path):
@@ -82,11 +85,12 @@ def prepare_inputs_masker(batch, model, use_text=False):
     # inputs = {'input_ids': batch[0], 'token_type_ids': batch[1], 'attention_mask': batch[2]} 
     # targets = batch[3]
     btt = [b.to(device) for b in batch[:4]]
-    inputs = {'input_ids': btt[0][0:256], 'input_ids_masked': btt[0][256:512],
-                'input_ids_ood': btt[0][512:768], 
+    #pdb.set_trace()
+    inputs = {'input_ids': btt[0][:, 0:256], 'input_ids_masked': btt[0][:, 256:512],
+                'input_ids_ood': btt[0][:, 512:768], 
                 'token_type_ids': btt[1], 'attention_mask': btt[2]} 
-    targets = btt[3][-1]
-    masked_targets = btt[3][0:-1]
+    targets = btt[3][:, -1]
+    masked_targets = btt[3][:, 0:-1]
 
     if use_text:
         target_text = batch[4]

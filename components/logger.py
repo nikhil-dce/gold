@@ -25,7 +25,7 @@ class ExperienceLogger:
         self.logger.addHandler(logging.FileHandler(log_path))
         self.logger.debug(args)      
         
-        if args.version == 'baseline':
+        if args.version == 'baseline' or 'masker':
             if args.do_train:
                 self.metric = 'accuracy'
                 self.version = 'intent'

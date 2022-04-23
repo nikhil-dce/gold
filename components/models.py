@@ -210,52 +210,65 @@ class Classifier(nn.Module):
 
     # return middle if outcome in ['bert_embed', 'mahalanobis', 'gradient', 'nml'] else logit
 
+def uniform_labels(labels, n_classes):
+    unif = torch.ones(labels.size(0), n_classes).to(device)
+    return unif / n_classes
+
 class MaskerIntentModel(IntentModel):
   def __init__(self, args, ontology, tokenizer, vocab_size):
       super().__init__(args, ontology, tokenizer)
+      self.load_dir = os.path.join(args.output_dir, args.task, 'masker')
       self.net_ssl = nn.Sequential(  # self-supervision layer
             nn.Linear(768, 768),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Linear(768, vocab_size)
+            nn.Linear(768, vocab_size))
       self.dropout = nn.Dropout(0.1)
   
-  def forward(self, inputs, targets, outcome='loss'):
+  def forward(self, inputs, targets, masked_labels = None, outcome='loss'):
+      #labels_ssl = targets[:, :-1]  # self-sup labels (B, K)
+      #targets = targets[:, -1]  # class labels (B)
+      if outcome != 'loss':
+        return super().forward(inputs, targets, outcome)
+      else:
+        labels_ssl = masked_labels
+        
+        #masked token
+        #pdb.set_trace()
+        enc_out = self.encoder(inputs['input_ids_masked'], inputs['token_type_ids'], inputs['attention_mask'])
+        sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
+        out_ssl = self.dropout(sequence)
+        out_ssl_logits = self.net_ssl(out_ssl)
+        out_ssl = out_ssl_logits.permute(0, 2, 1) #16 x vocab x 256
+        loss_ssl = F.cross_entropy(out_ssl, labels_ssl, ignore_index=-1)  # ignore non-masks (-1)
+        loss_ssl = loss_ssl * 0.001 #args.lambda_ssl
+        print("loss ssl:", loss_ssl.item())
 
-      labels_ssl = targets[:, :-1]  # self-sup labels (B, K)
-      targets = targets[:, -1]  # class labels (B)
-
-      #masked token
-      enc_out = self.encoder(inputs['input_ids_masked'], inputs['token_type_ids'], inputs['attention_mask'])
-      sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
-      out_ssl = self.dropout(sequence)
-      out_ssl_logits = self.net_ssl(out_ssl)
-      out_ssl = out_ssl_logits.permute(0, 2, 1) #16 x vocab x 256
-      loss_ssl = F.cross_entropy(out_ssl, labels_ssl, ignore_index=-1)  # ignore non-masks (-1)
-      loss_ssl = loss_ssl * 0.001 #args.lambda_ssl
-
-      #normal
-      enc_out = self.encoder(inputs['input_ids'], inputs['token_type_ids'], inputs['attention_mask'])
-      sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
-      hidden = sequence[:, 0, :]
-      hidden = self.dropout(hidden)
-      logit = self.classify(hidden, outcome) # batch_size, num_intents
-      loss = torch.zeros(batch_s)    # set as default loss\
-      output = logit  # logit is a FloatTensor, targets should be a LongTensor
-      loss = self.criterion(logit, targets) # [batch_size]
-      loss = torch.mean(loss)
-    
-    
-      #ood
-      enc_out = self.encoder(inputs['input_ids_ood'], inputs['token_type_ids'], inputs['attention_mask'])
-      sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']  # pooled feature
-      out_ood = self.dropout(pooled)
-      out_ood_logits = self.classify(hidden, outcome) # batch_size, num_intents
-      out_ood = F.log_softmax(out_ood_logits, dim=1)  # log-probs
-      unif = uniform_labels(labels, n_classes=n_classes)
-      loss_ent = F.kl_div(out_ood, unif)
-      loss_ent = loss_ent * 0.0001 #args.lambda_ent
-      loss = loss_cls + loss_ssl + loss_ent
-      #out_ood = self.net_cls(out_ood)
-       
-      return output, out_ssl_logits, out_ood_logits, loss
+        #normal
+        enc_out = self.encoder(inputs['input_ids'], inputs['token_type_ids'], inputs['attention_mask'])
+        sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
+        hidden = sequence[:, 0, :]
+        hidden = self.dropout(hidden)
+        batch_s = hidden.shape[0]
+        logit = self.classify(hidden, outcome) # batch_size, num_intents
+        loss = torch.zeros(batch_s)    # set as default loss\
+        output = logit  # logit is a FloatTensor, targets should be a LongTensor
+        loss = self.criterion(logit, targets) # [batch_size]
+        loss = torch.mean(loss)
+        print("loss:", loss.item())
+      
+      
+        #ood
+        enc_out = self.encoder(inputs['input_ids_ood'], inputs['token_type_ids'], inputs['attention_mask'])
+        sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']  # pooled feature
+        out_ood = self.dropout(pooled)
+        out_ood_logits = self.classify(hidden, outcome) # batch_size, num_intents
+        out_ood = F.log_softmax(out_ood_logits, dim=1)  # log-probs
+        unif = uniform_labels(targets, n_classes=150)
+        loss_ent = F.kl_div(out_ood, unif)
+        loss_ent = loss_ent * 0.0001 #args.lambda_ent
+        print("loss ssl:", loss_ent.item())
+        loss = loss + loss_ssl + loss_ent
+        #out_ood = self.net_cls(out_ood)
+        
+        return output, out_ssl_logits, out_ood_logits, loss

@@ -92,7 +92,7 @@ def process_data(args, features, tokenizer, ontology):
   for split, feat in features.items():
     if args.version == 'augment':
       datasets[split] = DirectDataset(feat, tokenizer, ontology, split)
-    elif args.version == 'baseline':
+    elif args.version == 'baseline' or args.version == 'masker':
       if split == 'train' or (split == 'dev' and args.do_train):
         ins_data = [x for x in feat if x.oos_label == 0]
         datasets[split] = IntentDataset(ins_data, tokenizer, ontology, split)

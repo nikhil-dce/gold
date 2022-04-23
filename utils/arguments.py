@@ -28,7 +28,7 @@ def solicit_params():
     # Experiment options
     parser.add_argument("--version", default="direct", type=str,
                 help="Version of the code to train or evaluate",
-                choices=['baseline', 'augment', 'direct', 'intent'])
+                choices=['baseline', 'augment', 'direct', 'intent', 'masker'])
     parser.add_argument("--method", default="maxprob", type=str,
                 help="The baseline method to use when detecting OOS utterances",  # 'likelihood'
                 choices=['maxprob', 'entropy', 'bert_embed', 'mahalanobis', 'gradient', 'dropout', 'odin', 'nml', 'mahalanobis_preds', 'mahalanobis_nml'])
@@ -53,7 +53,7 @@ def solicit_params():
                 help="Log every X updates steps.")
     
     # Hyper-parameters for tuning
-    parser.add_argument("--batch-size", default=16, type=int,
+    parser.add_argument("--batch-size", default=8, type=int,
                 help="Batch size per GPU/CPU for training and evaluation.")
     parser.add_argument("--learning-rate", default=3e-5, type=float,
                 help="Model learning rate starting point.")
@@ -76,5 +76,7 @@ def solicit_params():
                 
     # Masker
     parser.add_argument("--masker", default = False, type = bool)
+    parser.add_argument("--best_base_model", type=str,
+                help="Best baseline model for the concerning task")
     args = parser.parse_args()
     return args

@@ -540,7 +540,7 @@ def run_inference(args, model, dataloader, exp_logger, split):
     inputs, labels, text = prepare_inputs(batch, model, use_text=True)
     texts.extend(text)
 
-    out = args.method if args.version == 'baseline' else 'loss'
+    out = args.method if args.version == 'baseline' or 'masker' else 'loss'
     with torch.no_grad():
       forward_out = model(inputs, labels, outcome=out)
     
