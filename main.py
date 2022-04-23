@@ -66,17 +66,17 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
     model = load_best_model(args, model, device)
 
   outputs = run_inference(args, model, dataloader, exp_logger, split)
-  if args.version == 'baseline' or 'masker' and args.method in ['bert_embed', 'mahalanobis', 'gradient']:
+  if args.version in ['baseline', 'masker'] and args.method in ['bert_embed', 'mahalanobis', 'gradient']:
     preloader = get_dataloader(args, datasets['train'], split='train')
     clusters, inv_cov_matrix = make_clusters(args, preloader, model, exp_logger, split)
     outputs = process_diff(args, clusters, inv_cov_matrix, *outputs)
-  elif args.version == 'baseline' or 'masker' and args.method == 'mahalanobis_preds':
+  elif args.version in ['baseline', 'masker'] and args.method == 'mahalanobis_preds':
     preloader = get_dataloader(args, datasets['train'], split='dev')
     clusters, inv_cov_matrix = make_clusters_pred(args, preloader, model, exp_logger, split)
     _, test_targets, exp_logger, test_all_encoder_out = outputs
     new_outputs = test_all_encoder_out, test_targets, exp_logger
     outputs = process_diff(args, clusters, inv_cov_matrix, *new_outputs)
-  elif args.version == 'baseline' or 'masker' and args.method == 'mahalanobis_nml':
+  elif args.version in ['baseline', 'masker'] and args.method == 'mahalanobis_nml':
     # Use `middle` (vectors) for preds like in mahalanobis.
     # Use `hidden` embedding for the projection matrix used in NML.
     # `run_inference` returns: preds/vectors (middle), targets, exp_logger, all_encoder_out (hidden)
@@ -96,9 +96,9 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
     # probs, targets, exp_logger, testset
     outputs = process_nml(args, p_parallel, p_bot, *new_outputs)
 
-  elif args.version == 'baseline' or 'masker' and args.method == 'dropout':
+  elif args.version in ['baseline', 'masker'] and args.method == 'dropout':
     outputs = process_drop(args, *outputs, exp_logger)
-  elif args.version == 'baseline' or 'masker' and args.method == 'nml':
+  elif args.version in ['baseline', 'masker'] and args.method == 'nml':
     # preloader = get_dataloader(args, datasets['train'], split='train')
     preloader = get_dataloader(args, datasets['train'], split='dev')
     p_parallel, p_bot = make_projection_matrices(args, preloader, model, exp_logger, split)
