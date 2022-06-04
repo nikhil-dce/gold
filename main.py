@@ -59,11 +59,17 @@ def run_train(args, model, datasets, tokenizer, exp_logger):
 def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
 
   dataloader = get_dataloader(args, datasets[split], split)
-
+  # pdb.set_trace()
   if split == 'test':
     if args.version == 'augment':
       model.load_dir = model.save_dir
     model = load_best_model(args, model, device)
+
+  # ckpt_path = os.path.join(model.load_dir, "Masker_epoch_acc333.pt")
+  # checkpoint = torch.load(ckpt_path, map_location='cpu')
+  # model.load_state_dict(checkpoint)
+  # model.eval()
+  # model.to(device)
 
   outputs = run_inference(args, model, dataloader, exp_logger, split)
   if args.version in ['baseline', 'masker'] and args.method in ['bert_embed', 'mahalanobis', 'gradient']:
@@ -119,8 +125,8 @@ def run_train_masker(args, model, masked_dataset, datasets, tokenizer, exp_logge
     model.train()
 
     for step, batch in enumerate(train_dataloader):
-      inputs, labels, masked_labels = prepare_inputs_masker(batch, model)
-      #pdb.set_trace()
+      inputs, labels, masked_labels = prepare_inputs_masker(batch, model, args)
+      # pdb.set_trace()
       pred, pred_m, pred_ood, loss = model(inputs, labels, masked_labels)
 
       exp_logger.tr_loss += loss.item()
@@ -137,13 +143,16 @@ def run_train_masker(args, model, masked_dataset, datasets, tokenizer, exp_logge
       if args.debug and step >= debug_break*args.log_interval:
         break
 
-    # eval_res = run_eval(args, model, datasets, tokenizer, exp_logger)
-    # if args.do_save and eval_res[exp_logger.metric] >= exp_logger.best_score[exp_logger.metric]:
-    #   exp_logger.best_score = eval_res
-    #   exp_logger.save_best_model(model, tokenizer)
-    model_to_save = model.module if hasattr(model, 'module') else model
-    ckpt_path = os.path.join(model.save_dir, "Masker_epoch" + str(epoch_count) + ".pt")
-    torch.save(model_to_save.state_dict(), ckpt_path)
+      
+    eval_res = run_eval(args, model, datasets, tokenizer, exp_logger)
+    
+    if args.do_save and eval_res[exp_logger.metric] >= exp_logger.best_score[exp_logger.metric]:
+     exp_logger.best_score = eval_res
+     exp_logger.save_best_model(model, tokenizer)
+    # pdb.set_trace()
+    # model_to_save = model.module if hasattr(model, 'module') else model
+    # ckpt_path = os.path.join(model.save_dir, "Masker_epoch_acc" + str(epoch_count+1) + str(epoch_count+1) + str(epoch_count+1) + ".pt")
+    # torch.save(model_to_save.state_dict(), ckpt_path)
 
     early_stop = exp_logger.end_epoch()
     if early_stop: break
@@ -176,11 +185,22 @@ if __name__ == "__main__":
   elif args.version == 'baseline':
     model = IntentModel(args, ontology, tokenizer).to(device)
   elif args.version == 'masker':
-    #train_dataloader = get_dataloader(args, datasets['train'], split='dev')
-    #masked_dataset, keyword = get_keywords(args, train_dataloader)
-    #get_keywords(args, train_dataloader)
-    masked_dataset = torch.load('/work/ds448/gold_mod/gold/utils/masked_dataset.pt')
-    keyword = torch.load("/work/ds448/gold_mod/gold/utils/keyword_10perclass.pth")
+    mahala = 1
+    if args.do_train:
+      train_dataloader = get_dataloader(args, datasets['train'], split='dev')
+      ##masked_dataset, keyword = get_keywords(args, train_dataloader)
+      get_keywords(args, train_dataloader, mahala)
+    if mahala == 1:
+      masked_dataset = torch.load('/work/ds448/gold_mod/gold/utils/masked_dataset_' + args.model + '_'+  "mahala_" + args.task + '_.pt')
+      keyword = torch.load("/work/ds448/gold_mod/gold/utils/keyword_" +  args.model + '_' + "mahala_" + args.task + "_10perclass.pth")
+    elif mahala == 0:
+      masked_dataset = torch.load('/work/ds448/gold_mod/gold/utils/masked_dataset_' + args.model + '_' + args.task + '_.pt')
+      keyword = torch.load("/work/ds448/gold_mod/gold/utils/keyword_" +  args.model + '_'  + args.task + "_10perclass.pth")
+    else:
+      masked_dataset = torch.load('/work/ds448/gold_mod/gold/utils/masked_dataset_' + args.model + '_'+  "mahalaV2_" + args.task + '_.pt')
+      keyword = torch.load("/work/ds448/gold_mod/gold/utils/keyword_" +  args.model + '_' + "mahalaV2_" + args.task + "_10perclass.pth")
+
+
     #pdb.set_trace()
     model = MaskerIntentModel(args, ontology, tokenizer, len(keyword)).to(device)
   exp_logger = ExperienceLogger(args, model.save_dir)
@@ -195,4 +215,5 @@ if __name__ == "__main__":
     #model.load_state_dict(checkpoint)
     #model.eval()
     #model.to(device)
+    # run_eval(args, model, datasets, tokenizer, exp_logger, split='dev')
     run_eval(args, model, datasets, tokenizer, exp_logger, split='test')
