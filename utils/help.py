@@ -78,7 +78,7 @@ def prepare_inputs(batch, model, use_text=False):
         return inputs, targets
 
 
-def prepare_inputs_masker(batch, model, use_text=False):
+def prepare_inputs_masker(batch, model, args, use_text=False):
     ''' Inputs: the batches from the collate function in the Dataset
     Outputs: something that a nn.Module model can consume, with inputs on device '''
     # batch = [b.to(device) for b in batch]
@@ -86,8 +86,11 @@ def prepare_inputs_masker(batch, model, use_text=False):
     # targets = batch[3]
     btt = [b.to(device) for b in batch[:4]]
     #pdb.set_trace()
-    inputs = {'input_ids': btt[0][:, 0:256], 'input_ids_masked': btt[0][:, 256:512],
-                'input_ids_ood': btt[0][:, 512:768], 
+    a = int(args.max_len)
+    
+
+    inputs = {'input_ids': btt[0][:, 0:a], 'input_ids_masked': btt[0][:, a:2*a],
+                'input_ids_ood': btt[0][:, 2*a:3*a], 
                 'token_type_ids': btt[1], 'attention_mask': btt[2]} 
     targets = btt[3][:, -1]
     masked_targets = btt[3][:, 0:-1]
