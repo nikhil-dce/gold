@@ -65,7 +65,7 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
       model.load_dir = model.save_dir
     model = load_best_model(args, model, device)
 
-  # ckpt_path = os.path.join(model.load_dir, "Masker_epoch_acc333.pt")
+  # ckpt_path = os.path.join(model.load_dir, "epoch5_star_lr1e-05_acc677.pt")
   # checkpoint = torch.load(ckpt_path, map_location='cpu')
   # model.load_state_dict(checkpoint)
   # model.eval()
@@ -146,9 +146,14 @@ def run_train_masker(args, model, masked_dataset, datasets, tokenizer, exp_logge
       
     eval_res = run_eval(args, model, datasets, tokenizer, exp_logger)
     
-    if args.do_save and eval_res[exp_logger.metric] >= exp_logger.best_score[exp_logger.metric]:
-     exp_logger.best_score = eval_res
-     exp_logger.save_best_model(model, tokenizer)
+    if args.version != 'masker':
+      if args.do_save and eval_res[exp_logger.metric] >= exp_logger.best_score[exp_logger.metric]:
+        exp_logger.best_score = eval_res
+        exp_logger.save_best_model(model, tokenizer)
+    else:
+      if args.do_save:
+        exp_logger.best_score = eval_res
+        exp_logger.save_best_model(model, tokenizer)
     # pdb.set_trace()
     # model_to_save = model.module if hasattr(model, 'module') else model
     # ckpt_path = os.path.join(model.save_dir, "Masker_epoch_acc" + str(epoch_count+1) + str(epoch_count+1) + str(epoch_count+1) + ".pt")
@@ -158,6 +163,21 @@ def run_train_masker(args, model, masked_dataset, datasets, tokenizer, exp_logge
     if early_stop: break
 
   return exp_logger.best_score
+
+def load_ckp(checkpoint_fpath, model):
+    checkpoint = torch.load(checkpoint_fpath)
+    # for key, v in checkpoint.items():
+    #   print(key)
+    new_state_dict = dict()
+    for key, value in checkpoint.items():  # only keep backbone parameters
+        if key.split('.')[0] in ['encoder', 'classify']:
+            key = '.'.join(key.split('.')[0:])  # remove 'backbone'
+            new_state_dict[key] = value
+    missing_keys, unexpected_keys = model.load_state_dict(new_state_dict, strict = False)
+    print("Unupdated keys", missing_keys)
+    print("Unused keys", unexpected_keys)
+    # optimizer.load_state_dict(checkpoint['optimizer'])
+    return model #, optimizer, checkpoint['epoch']
 
 if __name__ == "__main__":
   args = solicit_params()
@@ -185,24 +205,36 @@ if __name__ == "__main__":
   elif args.version == 'baseline':
     model = IntentModel(args, ontology, tokenizer).to(device)
   elif args.version == 'masker':
-    mahala = 1
+    mahala = 0
     if args.do_train:
       train_dataloader = get_dataloader(args, datasets['train'], split='dev')
       ##masked_dataset, keyword = get_keywords(args, train_dataloader)
-      get_keywords(args, train_dataloader, mahala)
+      # get_keywords(args, train_dataloader, mahala)
     if mahala == 1:
-      masked_dataset = torch.load('/work/ds448/gold_mod/gold/utils/masked_dataset_' + args.model + '_'+  "mahala_" + args.task + '_.pt')
-      keyword = torch.load("/work/ds448/gold_mod/gold/utils/keyword_" +  args.model + '_' + "mahala_" + args.task + "_10perclass.pth")
+      masked_dataset = torch.load('/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'+  "mahala_" + args.task + '_.pt')
+      keyword = torch.load("/home/dharun/gold_mod/gold/utils/keyword_" +  args.model + '_' + "mahala_" + args.task + "_10perclass.pth")
     elif mahala == 0:
-      masked_dataset = torch.load('/work/ds448/gold_mod/gold/utils/masked_dataset_' + args.model + '_' + args.task + '_.pt')
-      keyword = torch.load("/work/ds448/gold_mod/gold/utils/keyword_" +  args.model + '_'  + args.task + "_10perclass.pth")
+      masked_dataset = torch.load('/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_' + args.task + '_.pt')
+      keyword = torch.load("/home/dharun/gold_mod/gold/utils/keyword_" +  args.model + '_'  + args.task + "_10perclass.pth")
+    elif mahala == 2:
+      masked_dataset = torch.load('/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'+  "mahalaV2_" + args.task + '_.pt')
+      keyword = torch.load("/home/dharun/gold_mod/gold/utils/keyword_" +  args.model + '_' + "mahalaV2_" + args.task + "_10perclass.pth")
+    elif mahala == 3:
+      masked_dataset = torch.load('/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'+  "mahalaV3_" + args.task + '_.pt')
+      keyword = torch.load("/home/dharun/gold_mod/gold/utils/keyword_" +  args.model + '_' + "mahalaV3_" + args.task + "_10perclass.pth")
     else:
-      masked_dataset = torch.load('/work/ds448/gold_mod/gold/utils/masked_dataset_' + args.model + '_'+  "mahalaV2_" + args.task + '_.pt')
-      keyword = torch.load("/work/ds448/gold_mod/gold/utils/keyword_" +  args.model + '_' + "mahalaV2_" + args.task + "_10perclass.pth")
+      masked_dataset = torch.load('/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'+  "mahalaV4_" + args.task + '_.pt')
+      keyword = torch.load("/home/dharun/gold_mod/gold/utils/keyword_" +  args.model + '_' + "mahalaV4_" + args.task + "_10perclass.pth")
 
-
+    ## load centroids and inv_cov_matrix
+    centroids = torch.load("/home/dharun/gold_mod/gold/utils/centroids_" + args.task)
+    inv_cov_matrix = torch.load("/home/dharun/gold_mod/gold/utils/cov_matrix_" + args.task)
+    
     #pdb.set_trace()
-    model = MaskerIntentModel(args, ontology, tokenizer, len(keyword)).to(device)
+    model = MaskerIntentModel(args, ontology, tokenizer, len(keyword), centroids, inv_cov_matrix).to(device)
+    if args.do_train:
+      model = load_ckp(args.best_base_model, model) #overwrite base model
+
   exp_logger = ExperienceLogger(args, model.save_dir)
   
   if args.do_train:
@@ -213,7 +245,7 @@ if __name__ == "__main__":
   if args.do_eval:
     #checkpoint = torch.load("/work/ds448/gold_mod/gold/results/star/masker/Masker_epoch0.pt", map_location='cpu')
     #model.load_state_dict(checkpoint)
-    #model.eval()
+    #model.eval()d
     #model.to(device)
     # run_eval(args, model, datasets, tokenizer, exp_logger, split='dev')
     run_eval(args, model, datasets, tokenizer, exp_logger, split='test')

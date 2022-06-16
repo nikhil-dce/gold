@@ -7,11 +7,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 import pdb
+import logging
 
 from utils.help import prepare_inputs
 from torch.utils.data import TensorDataset
 
-from utils.evaluate import compute_centroids, make_covariance_matrix, process_diff
+from utils.evaluate import compute_centroids, make_covariance_matrix, process_diff, process_diff_training
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Keyword():
@@ -64,13 +65,19 @@ def get_keywords(args, dataset, mahala = 0):
     #    attn_model = nn.DataParallel(attn_model)
     if mahala == 1:
         keyword = get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model)
-        keyword_path = "/work/ds448/gold_mod/gold/utils/keyword_" + args.model + '_' + "mahala_" + args.task + "_10perclass.pth"
+        keyword_path = "/home/dharun/gold_mod/gold/utils/keyword_" + args.model + '_' + "mahala_" + args.task + "_10perclass.pth"
     elif mahala == 0:
         keyword = get_attention_keyword(args, dataset, tokenizer, attn_model)
-        keyword_path = "/work/ds448/gold_mod/gold/utils/keyword_" + args.model + '_'  + args.task + "_10perclass.pth"
-    if mahala == 2:
+        keyword_path = "/home/dharun/gold_mod/gold/utils/keyword_" + args.model + '_'  + args.task + "_10perclass.pth"
+    elif mahala == 2:
         keyword = get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model)
-        keyword_path = "/work/ds448/gold_mod/gold/utils/keyword_" + args.model + '_' + "mahalaV2_" + args.task + "_10perclass.pth"
+        keyword_path = "/home/dharun/gold_mod/gold/utils/keyword_" + args.model + '_' + "mahalaV2_" + args.task + "_10perclass.pth"
+    elif mahala == 3:
+        keyword = get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model)
+        keyword_path = "/home/dharun/gold_mod/gold/utils/keyword_" + args.model + '_' + "mahalaV3_" + args.task + "_10perclass.pth"
+    else:
+        keyword = get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model)
+        keyword_path = "/home/dharun/gold_mod/gold/utils/keyword_" + args.model + '_' + "mahalaV4_" + args.task + "_10perclass.pth"
     keyword = Keyword('attention', keyword)
     
     torch.save(keyword, keyword_path)
@@ -107,10 +114,13 @@ def get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model, keyw
     centroids = compute_centroids(data_stack, labels_stack)
     inv_cov_matrix = make_covariance_matrix(args, data_stack, centroids, labels_stack)
 
+    torch.save(centroids, "/home/dharun/gold_mod/gold/utils/centroids_" + args.task)
+    torch.save(inv_cov_matrix, "/home/dharun/gold_mod/gold/utils/cov_matrix_" + args.task)
     print("Stacking done!")
 
     max_mahala = 0 ; min_mahala = 1e7
     mahala_map = {}
+    batch_size = args.batch_size
 
     for batch_index, batch in enumerate(loader):
         inputs, labels = prepare_inputs(batch, attn_model)
@@ -122,16 +132,18 @@ def get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model, keyw
         hidden = sequence[:, 0, :]
         attention = attention_layers[-1][0]  # attention of final layer (batch_size, num_heads, max_len, max_len)
         mahala_distance = process_diff(args, centroids, inv_cov_matrix, hidden.cpu(), None, None)[0]
-        batch_size = attention.size(0)
+        
         for i in range(attention.size(0)):  # batch_size
             mahala_map[i + batch_index*batch_size] = mahala_distance[i].item()
+            # print(i + batch_index*batch_size, mahala_map[i + batch_index*batch_size])
             div = mahala_distance[i].item()
             if div > max_mahala:
                 max_mahala = div
             if div < min_mahala:
                 min_mahala = div
+        
 
-
+    print(max_mahala, min_mahala)
     for batch_index , batch in enumerate(loader):
         
         #tokens_a = tokens[0].to(device)
@@ -159,7 +171,7 @@ def get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model, keyw
         # 4. In second loop, attention scores, also mahala dist, and set gradient true for attention score. Set attention, set_grad = True, do backward
         attention = attention.sum(dim=1)  # sum over attention heads (batch_size, max_len, max_len)
         # pdb.set_trace()
-        batch_size = attention.size(0)
+        # batch_size = attention.size(0)
         # for i in range(attention.size(0)):  # batch_size
         #     mahala_map[i + batch_index*batch_size] = mahala_distance[i].item()
         #     if div > max_div:
@@ -187,8 +199,14 @@ def get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model, keyw
                 #     div = mahala_distance[i].item()
                 
                 norm_mahala = (mahala_map[i + batch_size * batch_index] - min_mahala)/(max_mahala - min_mahala)
-                attn_score[token] += score.item()/norm_mahala #to-do max and min div
+                norm_mahala += 0.001 #to prevent div by zero
+
+                # attn_score[token] += score.item()/norm_mahala #to-do max and min div # V2 version
+                # attn_score[token] += score.item()/div #V2-A version
+                attn_score[token] += score.item() * norm_mahala #v3
+                # print(mahala_map[i + batch_size * batch_index])
                 attn_freq[token] += 1
+                # attn_freq[token] += norm_mahala #V4
         # break
     
     for tok in range(vocab_size):
@@ -338,12 +356,15 @@ def masked_dataset(args, tokenizer, dataset, keyword, mahala,
     masked_dataset = TensorDataset(masked_tokens, input_type_ids, attention_masks, masked_labels)
     #masked_tokens Nx768, attention_masks Nx256, 
     if mahala == 1:
-        dataset_path = '/work/ds448/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + "mahala_" + args.task + '_.pt'
+        dataset_path = '/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + "mahala_" + args.task + '_.pt'
     elif mahala == 0:
-        dataset_path = '/work/ds448/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + args.task + '_.pt'
+        dataset_path = '/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + args.task + '_.pt'
+    elif mahala == 2:
+        dataset_path = '/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + "mahalaV2_" + args.task + '_.pt'
+    elif mahala == 3:
+        dataset_path = '/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + "mahalaV3_" + args.task + '_.pt'
     else:
-        dataset_path = '/work/ds448/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + "mahalaV2_" + args.task + '_.pt'
-    
+        dataset_path = '/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + "mahalaV4_" + args.task + '_.pt'
     torch.save(masked_dataset, dataset_path)
     print("Masked dataset saved in " + dataset_path)
     #return masked_dataset, keyword

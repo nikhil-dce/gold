@@ -78,5 +78,7 @@ def solicit_params():
     parser.add_argument("--masker", default = False, type = bool)
     parser.add_argument("--best_base_model", type=str,
                 help="Best baseline model for the concerning task")
+    parser.add_argument("--ood_maha_loss", type=int,
+                help="Enable Mahala loss for OOD")
     args = parser.parse_args()
     return args

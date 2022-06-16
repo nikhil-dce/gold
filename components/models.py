@@ -15,6 +15,8 @@ from assets.static_vars import baseline_methods, direct_modes, device
 
 import pdb
 from numpy import random
+from utils.evaluate import compute_centroids, make_covariance_matrix, process_diff, process_diff_training
+
 class BaseModel(nn.Module):
   # Main model for predicting Unified Meaning Representations of act, topic and modifier
   def __init__(self, args, ontology, tokenizer):
@@ -215,7 +217,7 @@ def uniform_labels(labels, n_classes):
     return unif / n_classes
 
 class MaskerIntentModel(IntentModel):
-  def __init__(self, args, ontology, tokenizer, vocab_size):
+  def __init__(self, args, ontology, tokenizer, vocab_size, centroids, inv_cov_matrix):
       super().__init__(args, ontology, tokenizer)
       self.load_dir = os.path.join(args.output_dir, args.task, 'masker')
       self.net_ssl = nn.Sequential(  # self-supervision layer
@@ -226,6 +228,9 @@ class MaskerIntentModel(IntentModel):
       self.dropout = nn.Dropout(0.1)
       self.args = args
       self.dense = nn.Linear(768,768)
+      self.centroids = centroids.to(device)
+      self.cov_matrix = inv_cov_matrix.to(device)
+      
   
   def forward(self, inputs, targets, masked_labels = None, outcome='loss'):
       #labels_ssl = targets[:, :-1]  # self-sup labels (B, K)
@@ -247,7 +252,7 @@ class MaskerIntentModel(IntentModel):
         out_ssl = out_ssl_logits.permute(0, 2, 1) #16 x vocab x 256
         loss_ssl = F.cross_entropy(out_ssl, labels_ssl, ignore_index=-1)  # ignore non-masks (-1)
         loss_ssl = loss_ssl * 0.001 #args.lambda_ssl
-        print("loss ssl:", loss_ssl.item())
+        # print("loss ssl:", loss_ssl.item())
 
         #normal
         if self.args.model == 'bert':
@@ -261,7 +266,7 @@ class MaskerIntentModel(IntentModel):
             output = logit  # logit is a FloatTensor, targets should be a LongTensor
             loss = self.criterion(logit, targets) # [batch_size]
             loss = torch.mean(loss)
-            print("loss:", loss.item())
+            # print("loss:", loss.item())
         if self.args.model == 'roberta':
             enc_out = self.encoder(inputs['input_ids'], inputs['attention_mask'])
             sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
@@ -280,42 +285,72 @@ class MaskerIntentModel(IntentModel):
             print("loss:", loss.item())
       
       
+        ### process diff with gpu, return batch_size, loss = max(maha_dist(centroids, hidden, cov_matrix) - epsilon(10^-1), 0) 
         #ood
-        if self.args.model == 'bert':
+        if self.args.ood_maha_loss == 1:
+          out_ood_logits = None
+          if self.args.model == 'bert':
             enc_out = self.encoder(inputs['input_ids_ood'], inputs['token_type_ids'], inputs['attention_mask'])
             sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']  # pooled feature
             # out_ood = self.dropout(pooled)
-            hidden = self.dropout(pooled)
-            out_ood_logits = self.classify(hidden, outcome) # batch_size, num_intents
-            out_ood = F.log_softmax(out_ood_logits, dim=1)  # log-probs
-            n_classes = out_ood.shape[1]
-            #pdb.set_trace()
-            unif = uniform_labels(targets, n_classes=n_classes)
-            loss_ent = F.kl_div(out_ood, unif)
-            loss_ent = loss_ent * 0.0001 #args.lambda_ent
-            print("loss ood:", loss_ent.item())
-            loss = loss + loss_ssl + loss_ent
-            #out_ood = self.net_cls(out_ood)
-        if self.args.model == 'roberta':
-            enc_out = self.encoder(inputs['input_ids_ood'], inputs['attention_mask'])
-            sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
-            # out = self.backbone(x_orig, attention_mask)[0]
-            # hidden = sequence[:, 0, :] # take cls token (<s>)
-            # hidden = self.dropout(hidden)
-            hidden = self.dropout(pooled)
-            # hidden = self.dense(hidden)
-            # hidden = torch.tanh(hidden)
-            # hidden = self.dropout(hidden)
-            # batch_s = hidden.shape[0]
-            out_ood_logits = self.classify(hidden, outcome) # batch_size, num_intents
-            out_ood = F.log_softmax(out_ood_logits, dim=1)  # log-probs
-            n_classes = out_ood.shape[1]
+            hidden_ood = self.dropout(pooled)
+      
+            mahala_distance = process_diff_training(self.args, self.centroids, self.cov_matrix, hidden_ood, None, None)[0]
+            mahala_distance_ind = process_diff_training(self.args, self.centroids, self.cov_matrix, hidden, None, None)[0]
+
+            margin = torch.ones_like(mahala_distance) * torch.mean(mahala_distance_ind).item() # set manually
+
+
+            loss_ent_ood = torch.mean(torch.max(mahala_distance - margin, torch.zeros_like(mahala_distance)))
+            loss_ent_ind = torch.mean(torch.max(mahala_distance_ind - margin, torch.zeros_like(mahala_distance_ind)))
+            loss_ent = -(loss_ent_ood - loss_ent_ind)
             # pdb.set_trace()
-            unif = uniform_labels(targets, n_classes=n_classes)
-            loss_ent = F.kl_div(out_ood, unif)
-            loss_ent = loss_ent * 0.0001 #args.lambda_ent
-            print("loss ood:", loss_ent.item())
+            # out_ood_logits = self.classify(hidden, outcome) # batch_size, num_intents
+            # out_ood = F.log_softmax(out_ood_logits, dim=1)  # log-probs
+            # n_classes = out_ood.shape[1]
+            
+            # unif = uniform_labels(targets, n_classes=n_classes)
+            # loss_ent = F.kl_div(out_ood, unif)
+            loss_ent = loss_ent * 0.1 #args.lambda_ent
+            # print("loss ood Maha_dist:", loss_ent.item())
             loss = loss + loss_ssl + loss_ent
             #out_ood = self.net_cls(out_ood)
-        
+        else:
+          if self.args.model == 'bert':
+              enc_out = self.encoder(inputs['input_ids_ood'], inputs['token_type_ids'], inputs['attention_mask'])
+              sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']  # pooled feature
+              # out_ood = self.dropout(pooled)
+              hidden = self.dropout(pooled)
+              out_ood_logits = self.classify(hidden, outcome) # batch_size, num_intents
+              out_ood = F.log_softmax(out_ood_logits, dim=1)  # log-probs
+              n_classes = out_ood.shape[1]
+              #pdb.set_trace()
+              unif = uniform_labels(targets, n_classes=n_classes)
+              loss_ent = F.kl_div(out_ood, unif)
+              loss_ent = loss_ent * 0.0001 #args.lambda_ent
+              print("loss ood:", loss_ent.item())
+              loss = loss + loss_ssl + loss_ent
+              #out_ood = self.net_cls(out_ood)
+          if self.args.model == 'roberta':
+              enc_out = self.encoder(inputs['input_ids_ood'], inputs['attention_mask'])
+              sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
+              # out = self.backbone(x_orig, attention_mask)[0]
+              # hidden = sequence[:, 0, :] # take cls token (<s>)
+              # hidden = self.dropout(hidden)
+              hidden = self.dropout(pooled)
+              # hidden = self.dense(hidden)
+              # hidden = torch.tanh(hidden)
+              # hidden = self.dropout(hidden)
+              # batch_s = hidden.shape[0]
+              out_ood_logits = self.classify(hidden, outcome) # batch_size, num_intents
+              out_ood = F.log_softmax(out_ood_logits, dim=1)  # log-probs
+              n_classes = out_ood.shape[1]
+              # pdb.set_trace()
+              unif = uniform_labels(targets, n_classes=n_classes)
+              loss_ent = F.kl_div(out_ood, unif)
+              loss_ent = loss_ent * 0.0001 #args.lambda_ent
+              print("loss ood:", loss_ent.item())
+              loss = loss + loss_ssl + loss_ent
+              #out_ood = self.net_cls(out_ood)
+        print(loss.item(), loss_ssl.item(), loss_ent.item())
         return output, out_ssl_logits, out_ood_logits, loss
