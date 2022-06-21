@@ -199,7 +199,6 @@ class Classifier(nn.Module):
 
     if outcome in ['bert_embed', 'mahalanobis', 'gradient', 'mahalanobis_nml']:
       return hidden
-      # return middle
     elif outcome == 'mahalanobis_preds':
       return (middle, logit)   
     elif outcome == 'nml':
@@ -231,7 +230,6 @@ class MaskerIntentModel(IntentModel):
       self.dense = nn.Linear(768,768)
       self.centroids = centroids.to(device)
       self.cov_matrix = inv_cov_matrix.to(device)
-      #self.binary_classifier= nn.Linear(768, 1)
       
   
   def forward(self, inputs, targets, masked_labels = None, outcome='loss'):
@@ -253,7 +251,7 @@ class MaskerIntentModel(IntentModel):
         out_ssl_logits = self.net_ssl(out_ssl)
         out_ssl = out_ssl_logits.permute(0, 2, 1) #16 x vocab x 256
         loss_ssl = F.cross_entropy(out_ssl, labels_ssl, ignore_index=-1)  # ignore non-masks (-1)
-        loss_ssl = loss_ssl * 0.000001 #args.lambda_ssl 0.001 default
+        loss_ssl = loss_ssl * 0.001 #args.lambda_ssl
         # print("loss ssl:", loss_ssl.item())
 
         #normal
@@ -261,9 +259,9 @@ class MaskerIntentModel(IntentModel):
             enc_out = self.encoder(inputs['input_ids'], inputs['token_type_ids'], inputs['attention_mask'])
             sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
             hidden = sequence[:, 0, :]
-            hidden = self.dropout(hidden)
+            # hidden = self.dropout(hidden)
             batch_s = hidden.shape[0]
-            logit = self.classify(hidden, outcome) # batch_size, num_intents
+            logit = self.classify(self.dropout(hidden), outcome) # batch_size, num_intents
             loss = torch.zeros(batch_s)    # set as default loss\
             output = logit  # logit is a FloatTensor, targets should be a LongTensor
             loss = self.criterion(logit, targets) # [batch_size]
@@ -274,12 +272,11 @@ class MaskerIntentModel(IntentModel):
             sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']
             # out = self.backbone(x_orig, attention_mask)[0]
             hidden = sequence[:, 0, :] # take cls token (<s>)
-            hidden = self.dropout(hidden)
             # hidden = self.dense(hidden)
             # hidden = torch.tanh(hidden)
             # hidden = self.dropout(hidden)
             batch_s = hidden.shape[0]
-            logit = self.classify(hidden, outcome) # batch_size, num_intents
+            logit = self.classify(self.dropout(hidden), outcome) # batch_size, num_intents
             loss = torch.zeros(batch_s)    # set as default loss\
             output = logit  # logit is a FloatTensor, targets should be a LongTensor
             loss = self.criterion(logit, targets) # [batch_size]
@@ -295,31 +292,35 @@ class MaskerIntentModel(IntentModel):
             enc_out = self.encoder(inputs['input_ids_ood'], inputs['token_type_ids'], inputs['attention_mask'])
             sequence, pooled = enc_out['last_hidden_state'], enc_out['pooler_output']  # pooled feature
             # out_ood = self.dropout(pooled)
-            hidden_ood = sequence[:, 0, :] #cls to cls comparison for euclidean
-            hidden_ood = self.dropout(hidden_ood)
-            # hidden_ood = self.dropout(pooled) # pooled instead of cls (masker)
+            # hidden_ood = self.dropout(pooled)
+            hidden_ood = sequence[:, 0, :] # take cls token (<s>)
       
-            # mahala_distance = process_diff_training(self.args, self.centroids, self.cov_matrix, hidden_ood, None, None)[0]
-            # mahala_distance_ind = process_diff_training(self.args, self.centroids, self.cov_matrix, hidden, None, None)[0]
+            mahala_distance = process_diff_training(self.args, self.centroids, self.cov_matrix, hidden_ood, None, None)[0]
+            mahala_distance_ind = process_diff_training(self.args, self.centroids, self.cov_matrix, hidden, None, None)[0]
+            
+            # # Sample-wise
+            margin = torch.ones_like(mahala_distance) * 100.0 # set manually
+            margin_distance = torch.max(
+              mahala_distance_ind - mahala_distance + margin, torch.zeros_like(mahala_distance))
+            loss_ent = torch.mean(margin_distance)
 
-            # margin = torch.ones_like(mahala_distance) * torch.mean(mahala_distance_ind).item() # set manually
+            # Mean
+            # loss_ent = torch.mean(mahala_distance_ind) - torch.mean(mahala_distance)
 
-
-            # loss_ent_ood = torch.mean(torch.max(mahala_distance - margin, torch.zeros_like(mahala_distance)))
-            # loss_ent_ind = torch.mean(torch.max(mahala_distance_ind - margin, torch.zeros_like(mahala_distance_ind)))
             # loss_ent = -(loss_ent_ood - loss_ent_ind)
-
-            loss_ent =  - torch.mean((hidden_ood - hidden)**2)
             # pdb.set_trace()
             # out_ood_logits = self.classify(hidden, outcome) # batch_size, num_intents
             # out_ood = F.log_softmax(out_ood_logits, dim=1)  # log-probs
             # n_classes = out_ood.shape[1]
             
-            # unif = uniform_labels(targets,d n_classes=n_classes)
+            # unif = uniform_labels(targets, n_classes=n_classes)
             # loss_ent = F.kl_div(out_ood, unif)
-            loss_ent = loss_ent * 0.0001 #args.lambda_ent
+            loss_ent = loss_ent * 0.01 #args.lambda_ent
+            # print("ood_maha_loss loss ood:", loss_ent.item())
+
             # print("loss ood Maha_dist:", loss_ent.item())
             loss = loss + loss_ssl + loss_ent
+            # loss = loss_ent
             #out_ood = self.net_cls(out_ood)
         else:
           if self.args.model == 'bert':
@@ -358,5 +359,5 @@ class MaskerIntentModel(IntentModel):
               print("loss ood:", loss_ent.item())
               loss = loss + loss_ssl + loss_ent
               #out_ood = self.net_cls(out_ood)
-        print(loss.item(), loss_ssl.item(), loss_ent.item())
+        # print(loss.item(), loss_ssl.item(), loss_ent.item())
         return output, out_ssl_logits, out_ood_logits, loss

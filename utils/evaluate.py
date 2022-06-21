@@ -528,12 +528,14 @@ def process_diff(args, clusters, inv_cov_matrix, vectors, targets, exp_logger):
 def process_diff_training(args, clusters, inv_cov_matrix, vectors, targets, exp_logger):
   ''' figure out how far from clusters '''
   # inv_cov_matrix = make_covariance_matrix(args, vectors, clusters)
+
   output = []
   for vector in vectors:
-    distances = [mahala_dist(vector, cluster, inv_cov_matrix) for cluster in clusters]
-    min_distance = min(distances)
-    output.append(min_distance.item())
-  output = torch.tensor(output)
+    distances = torch.stack([mahala_dist(vector, cluster, inv_cov_matrix) for cluster in clusters])
+    min_distance = torch.min(distances)
+    # output.append(min_distance.item())
+    output.append(min_distance)
+  output = torch.stack(output)
 
   return output, targets, exp_logger
 

@@ -5,6 +5,8 @@ def solicit_params():
     parser = argparse.ArgumentParser()
 
     # Required parameters
+    parser.add_argument("--masker-dir", default='masker_data', 
+        type=str, help="The masker data directory.")
     parser.add_argument("--input-dir", default='assets', type=str, 
                 help="The input training data file (a text file).")
     parser.add_argument("--output-dir", default='results', type=str,

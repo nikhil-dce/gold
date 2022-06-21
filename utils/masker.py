@@ -1,3 +1,4 @@
+from ast import arg
 import os
 import random
 import time
@@ -46,11 +47,12 @@ def get_keywords(args, dataset, mahala = 0):
 
     attn_model, tokenizer = backbone(args, True)
     attn_model.to(device)  # only backbone
-    CKPT_PATH = "/work/ds448/gold_mod/gold/results/star/baseline"
+    CKPT_PATH = "/media/nikhil/DATA/gold/results"
+    # CKPT_PATH = "/work/ds448/gold_mod/gold/results/star/baseline"
     # args.best_base_model "/work/ds448/gold_mod/gold/results/star/baseline/epoch12_star_lr1e-05_acc688.pt"
     attn_model_path = args.best_base_model
     #assert args.attn_model_path is not None
-    state_dict = torch.load(os.path.join(CKPT_PATH, "star", attn_model_path))
+    state_dict = torch.load(os.path.join(CKPT_PATH, args.task, attn_model_path))
 
     new_state_dict = dict()
     for key, value in state_dict.items():  # only keep backbone parameters
@@ -68,7 +70,9 @@ def get_keywords(args, dataset, mahala = 0):
         keyword_path = "/home/dharun/gold_mod/gold/utils/keyword_" + args.model + '_' + "mahala_" + args.task + "_10perclass.pth"
     elif mahala == 0:
         keyword = get_attention_keyword(args, dataset, tokenizer, attn_model)
-        keyword_path = "/home/dharun/gold_mod/gold/utils/keyword_" + args.model + '_'  + args.task + "_10perclass.pth"
+        # keyword_path = "/home/dharun/gold_mod/gold/utils/keyword_" + args.model + '_'  + args.task + "_10perclass.pth"
+        keyword_path = os.path.join(
+            args.output_dir, "keyword_" + args.model + '_'  + args.task + "_10perclass.pth")
     elif mahala == 2:
         keyword = get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model)
         keyword_path = "/home/dharun/gold_mod/gold/utils/keyword_" + args.model + '_' + "mahalaV2_" + args.task + "_10perclass.pth"
@@ -91,7 +95,8 @@ def get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model, keyw
     #loader = DataLoader(dataset.train_dataset, shuffle=False,
      #                   batch_size=16, num_workers=4)
     loader = dataset
-    
+    CKPT_PATH = "/media/nikhil/DATA/gold/results"
+
     SPECIAL_TOKENS = tokenizer.all_special_ids
     PAD_TOKEN = tokenizer.convert_tokens_to_ids(tokenizer.pad_token)
 
@@ -113,11 +118,13 @@ def get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model, keyw
     labels_stack = torch.cat(labels_stack)
     centroids = compute_centroids(data_stack, labels_stack)
     inv_cov_matrix = make_covariance_matrix(args, data_stack, centroids, labels_stack)
-
-    torch.save(centroids, "/home/dharun/gold_mod/gold/utils/centroids_" + args.task)
-    torch.save(inv_cov_matrix, "/home/dharun/gold_mod/gold/utils/cov_matrix_" + args.task)
+    
+    path = "/media/nikhil/DATA/gold/masker_data"
+    # path = "/home/dharun/gold_mod/gold/utils"
+    torch.save(centroids, os.path.join(path, "centroids_" + args.task))
+    torch.save(inv_cov_matrix, os.path.join(path, "cov_matrix_" + args.task))
     print("Stacking done!")
-
+    # sys.exit()
     max_mahala = 0 ; min_mahala = 1e7
     mahala_map = {}
     batch_size = args.batch_size
@@ -131,6 +138,8 @@ def get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model, keyw
         sequence = attention_layers[0]
         hidden = sequence[:, 0, :]
         attention = attention_layers[-1][0]  # attention of final layer (batch_size, num_heads, max_len, max_len)
+        mahala_distance = process_diff(args, centroids, inv_cov_matrix, hidden.cpu(), None, None)[0]
+
         mahala_distance = process_diff_training(args, centroids, inv_cov_matrix, hidden.cpu(), None, None)[0]
         
         for i in range(attention.size(0)):  # batch_size
@@ -358,7 +367,9 @@ def masked_dataset(args, tokenizer, dataset, keyword, mahala,
     if mahala == 1:
         dataset_path = '/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + "mahala_" + args.task + '_.pt'
     elif mahala == 0:
-        dataset_path = '/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + args.task + '_.pt'
+        # Set args.output_dir = '/home/dharun/gold_mod/gold/utils'
+        dataset_path = os.path.join(args.output_dir, 'masked_dataset_' + args.model + '_'  + args.task + '_.pt')
+        # dataset_path = '/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + args.task + '_.pt'
     elif mahala == 2:
         dataset_path = '/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'  + "mahalaV2_" + args.task + '_.pt'
     elif mahala == 3:
