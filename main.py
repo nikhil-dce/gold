@@ -65,7 +65,7 @@ def run_eval(args, model, datasets, tokenizer, exp_logger, split='dev'):
       model.load_dir = model.save_dir
     model = load_best_model(args, model, device)
 
-  # ckpt_path = os.path.join(model.load_dir, "epoch5_star_lr1e-05_acc677.pt")
+  # ckpt_path = os.path.join(model.load_dir, "epoch1_star_lr1e-05_acc675.pt")
   # checkpoint = torch.load(ckpt_path, map_location='cpu')
   # model.load_state_dict(checkpoint)
   # model.eval()
@@ -209,7 +209,7 @@ if __name__ == "__main__":
     if args.do_train:
       train_dataloader = get_dataloader(args, datasets['train'], split='dev')
       ##masked_dataset, keyword = get_keywords(args, train_dataloader)
-      # get_keywords(args, train_dataloader, mahala)
+      get_keywords(args, train_dataloader, mahala)
     if mahala == 1:
       masked_dataset = torch.load('/home/dharun/gold_mod/gold/utils/masked_dataset_' + args.model + '_'+  "mahala_" + args.task + '_.pt')
       keyword = torch.load("/home/dharun/gold_mod/gold/utils/keyword_" +  args.model + '_' + "mahala_" + args.task + "_10perclass.pth")

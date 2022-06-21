@@ -131,7 +131,7 @@ def get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model, keyw
         sequence = attention_layers[0]
         hidden = sequence[:, 0, :]
         attention = attention_layers[-1][0]  # attention of final layer (batch_size, num_heads, max_len, max_len)
-        mahala_distance = process_diff(args, centroids, inv_cov_matrix, hidden.cpu(), None, None)[0]
+        mahala_distance = process_diff_training(args, centroids, inv_cov_matrix, hidden.cpu(), None, None)[0]
         
         for i in range(attention.size(0)):  # batch_size
             mahala_map[i + batch_index*batch_size] = mahala_distance[i].item()
@@ -205,8 +205,8 @@ def get_attention_keyword_mahalanobis(args, dataset, tokenizer, attn_model, keyw
                 # attn_score[token] += score.item()/div #V2-A version
                 attn_score[token] += score.item() * norm_mahala #v3
                 # print(mahala_map[i + batch_size * batch_index])
-                attn_freq[token] += 1
-                # attn_freq[token] += norm_mahala #V4
+                # attn_freq[token] += 1
+                attn_freq[token] += norm_mahala #V4
         # break
     
     for tok in range(vocab_size):
