@@ -317,7 +317,7 @@ class MaskerIntentModel(IntentModel):
             
             # unif = uniform_labels(targets,d n_classes=n_classes)
             # loss_ent = F.kl_div(out_ood, unif)
-            loss_ent = loss_ent * 0.0001 #args.lambda_ent
+            loss_ent = loss_ent * 0.00001 #args.lambda_ent
             # print("loss ood Maha_dist:", loss_ent.item())
             loss = loss + loss_ssl + loss_ent
             #out_ood = self.net_cls(out_ood)

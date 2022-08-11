@@ -205,7 +205,7 @@ if __name__ == "__main__":
   elif args.version == 'baseline':
     model = IntentModel(args, ontology, tokenizer).to(device)
   elif args.version == 'masker':
-    mahala = 0
+    mahala = 3
     if args.do_train:
       train_dataloader = get_dataloader(args, datasets['train'], split='dev')
       ##masked_dataset, keyword = get_keywords(args, train_dataloader)
